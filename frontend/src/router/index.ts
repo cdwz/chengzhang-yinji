@@ -3,6 +3,11 @@ import type { RouteRecordRaw } from 'vue-router'
 import { useUserStore } from '@/stores/user'
 
 const routes: RouteRecordRaw[] = [
+  // 根路径重定向到登录页
+  {
+    path: '/',
+    redirect: '/login'
+  },
   // 公共路由
   {
     path: '/login',
