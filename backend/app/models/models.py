@@ -142,7 +142,7 @@ class ParentStudent(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     parent_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     student_id = Column(UUID(as_uuid=True), ForeignKey("students.id"), nullable=False)
-    relationship = Column(String(20), default="家长")  # 父亲、母亲、其他
+    relation_type = Column(String(20), default="家长")  # 父亲、母亲、其他
     
     __table_args__ = (
         UniqueConstraint("parent_id", "student_id", name="uq_parent_student"),

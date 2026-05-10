@@ -138,4 +138,4 @@ def generate_compliance_warning(violations: List[str]) -> str:
         return ""
     
     words = "、".join(violations)
-    return f"检测到不合规词汇：{words}。根据教育部"双减"政策，请使用合规表述。"
+    return f"检测到不合规词汇：{words}。根据教育部双减政策，请使用合规表述。"
