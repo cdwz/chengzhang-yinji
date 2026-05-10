@@ -281,7 +281,7 @@ async def upload_image(
         )
     
     # 验证权限
-    if submission.parent_id != user["id"]:
+    if str(submission.parent_id) != user["id"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="无权操作此提交记录"
@@ -295,9 +295,10 @@ async def upload_image(
     object_name = f"submissions/{submission_id}/{uuid.uuid4()}.{file_ext}"
     
     content = await file.read()
+    import io
     await upload_file(
         object_name,
-        file.file,
+        io.BytesIO(content),
         content_type=file.content_type or "image/jpeg",
         length=len(content)
     )

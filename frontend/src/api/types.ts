@@ -59,10 +59,27 @@ export interface Class {
 
 export interface Student {
   id: string
-  student_no: string
   name: string
-  display_name?: string
+  gender: string
+  student_number?: string
   class_id: string
+  study_group_id?: string
+  created_at: string
+}
+
+export interface StudyGroup {
+  id: string
+  name: string
+  class_id: string
+  sort_order: number
+  students: Student[]
+}
+
+export interface StudentListResponse {
+  total: number
+  page: number
+  page_size: number
+  items: Student[]
 }
 
 export interface Task {

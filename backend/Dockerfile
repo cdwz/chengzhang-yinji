@@ -3,13 +3,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 安装系统依赖
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-# 安装Python依赖
+# 安装Python依赖（使用预编译wheels）
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

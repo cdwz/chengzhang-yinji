@@ -63,8 +63,8 @@ request.interceptors.response.use(
 
 // 请求方法封装
 export const http = {
-  get<T = any>(url: string, config?: AxiosRequestConfig): Promise<T> {
-    return request.get(url, config)
+  get<T = any>(url: string, params?: Record<string, any>, config?: AxiosRequestConfig): Promise<T> {
+    return request.get(url, { ...config, params })
   },
   
   post<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
@@ -79,10 +79,7 @@ export const http = {
     return request.delete(url, config)
   },
   
-  upload<T = any>(url: string, file: File, onProgress?: (percent: number) => void): Promise<T> {
-    const formData = new FormData()
-    formData.append('file', file)
-    
+  upload<T = any>(url: string, formData: FormData, onProgress?: (percent: number) => void): Promise<T> {
     return request.post(url, formData, {
       headers: {
         'Content-Type': 'multipart/form-data'

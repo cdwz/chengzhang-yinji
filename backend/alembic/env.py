@@ -15,8 +15,9 @@ from app.models import *  # 导入所有模型
 # this is the Alembic Config object
 config = context.config
 
-# 设置数据库URL
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# 设置数据库URL (转义 % 字符避免 interpolation 错误)
+db_url = settings.DATABASE_URL.replace('%', '%%')
+config.set_main_option("sqlalchemy.url", db_url)
 
 # Interpret the config file for Python logging.
 if config.config_file_name is not None:

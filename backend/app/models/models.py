@@ -121,16 +121,21 @@ class Student(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid4)
     class_id = Column(UUID(as_uuid=True), ForeignKey("classes.id"), nullable=False)
-    student_no = Column(String(20), nullable=False)  # 学号
+    student_number = Column(String(20), nullable=True)  # 学号
     name = Column(String(50), nullable=False)
+    gender = Column(String(10), default="male")  # 性别: male/female
+    birth_date = Column(Date, nullable=True)  # 出生日期
     display_name = Column(String(60))  # 重名时附加标识
+    study_group_id = Column(UUID(as_uuid=True), ForeignKey("study_groups.id"), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
     
     __table_args__ = (
-        UniqueConstraint("class_id", "student_no", name="uq_student_class_no"),
+        UniqueConstraint("class_id", "student_number", name="uq_student_class_no"),
     )
     
     # 关系
     class_ = relationship("Class", back_populates="students")
+    study_group = relationship("StudyGroup", back_populates="students")
     parent_students = relationship("ParentStudent", back_populates="student", cascade="all, delete-orphan")
     student_groups = relationship("StudentGroup", back_populates="student", cascade="all, delete-orphan")
 
@@ -164,6 +169,7 @@ class StudyGroup(Base):
     
     # 关系
     class_ = relationship("Class", back_populates="study_groups")
+    students = relationship("Student", back_populates="study_group")
     student_groups = relationship("StudentGroup", back_populates="group", cascade="all, delete-orphan")
     tasks = relationship("LearningTask", back_populates="group")
 

@@ -138,6 +138,34 @@ class ClassDetailResponse(ClassResponse):
 
 # ==================== 学生相关 ====================
 
+class StudentCreate(BaseModel):
+    class_id: UUID
+    name: str = Field(..., min_length=1, max_length=50, description="姓名")
+    gender: str = Field(default="male", description="性别")
+    student_number: Optional[str] = Field(None, max_length=20, description="学号")
+    birth_date: Optional[date] = None
+
+
+class StudentResponse(BaseModel):
+    id: UUID
+    name: str
+    gender: str = "male"
+    student_number: Optional[str] = None
+    class_id: UUID
+    study_group_id: Optional[UUID] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class StudentListResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: List[StudentResponse]
+
+
 class StudentImport(BaseModel):
     student_no: str = Field(..., max_length=20, description="学号")
     name: str = Field(..., max_length=50, description="姓名")
@@ -147,21 +175,28 @@ class StudentImportBatch(BaseModel):
     students: List[StudentImport]
 
 
-class StudentResponse(BaseModel):
-    id: UUID
-    student_no: str
-    name: str
-    display_name: Optional[str] = None
-    class_id: UUID
-
-    class Config:
-        from_attributes = True
-
-
 class ParentBindRequest(BaseModel):
     invite_code: str = Field(..., description="班级邀请码")
     student_id: UUID = Field(..., description="学生ID")
     relationship: str = Field(default="家长", description="关系")
+
+
+# ==================== 学习小组相关 ====================
+
+class StudyGroupCreate(BaseModel):
+    class_id: UUID
+    name: str = Field(..., min_length=1, max_length=50, description="小组名称")
+
+
+class StudyGroupResponse(BaseModel):
+    id: UUID
+    name: str
+    class_id: UUID
+    sort_order: int = 0
+    students: List[StudentResponse] = []
+
+    class Config:
+        from_attributes = True
 
 
 # ==================== 任务相关 ====================
