@@ -7,6 +7,7 @@ export {}
 
 declare module 'vue' {
   export interface GlobalComponents {
+    A4CameraGuide: typeof import('./components/A4CameraGuide.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     TaskStats: typeof import('./components/TaskStats.vue')['default']

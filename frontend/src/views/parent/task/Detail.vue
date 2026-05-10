@@ -33,23 +33,59 @@
     <div class="section-title">照片记录</div>
     
     <div class="image-section">
-      <van-uploader
-        v-model="imageList"
-        multiple
-        :max-count="9"
-        :max-size="10 * 1024 * 1024"
-        :after-read="handleAfterRead"
-        @delete="handleDeleteImage"
-      >
-        <van-button type="primary" size="small" icon="photograph">拍照记录</van-button>
-      </van-uploader>
+      <!-- 主要拍照按钮（引导拍摄） -->
+      <div class="photo-actions">
+        <van-button 
+          type="primary" 
+          size="small" 
+          icon="photograph"
+          @click="openCameraGuide"
+        >
+          引导拍照
+        </van-button>
+        
+        <span class="action-tip">推荐使用引导拍照，确保照片清晰</span>
+      </div>
       
+      <!-- 已选照片预览 -->
       <div v-if="imageList.length > 0" class="image-preview">
         <van-grid :column-num="3" :gutter="8">
           <van-grid-item v-for="(img, index) in imageList" :key="index">
-            <van-image :src="img.url || img.content" fit="cover" />
+            <div class="image-item">
+              <van-image :src="img.url || img.content" fit="cover" />
+              <van-icon 
+                name="clear" 
+                class="delete-icon" 
+                @click="handleDeleteImage(index)"
+              />
+            </div>
           </van-grid-item>
         </van-grid>
+        
+        <!-- 添加更多照片 -->
+        <div v-if="imageList.length < 9" class="add-more">
+          <van-uploader
+            :show-upload="true"
+            :max-count="9 - imageList.length"
+            :max-size="10 * 1024 * 1024"
+            :after-read="handleSelectFromAlbum"
+          >
+            <van-button size="small" icon="plus">添加更多</van-button>
+          </van-uploader>
+        </div>
+      </div>
+      
+      <!-- 相册选择（备选） -->
+      <div v-if="imageList.length === 0" class="album-option">
+        <span class="option-label">或从相册选择：</span>
+        <van-uploader
+          :show-upload="true"
+          :max-count="9"
+          :max-size="10 * 1024 * 1024"
+          :after-read="handleSelectFromAlbum"
+        >
+          <van-button size="small" plain icon="photo-o">从相册选择</van-button>
+        </van-uploader>
       </div>
     </div>
 
@@ -85,14 +121,25 @@
         </van-grid-item>
       </van-grid>
     </van-cell-group>
+    
+    <!-- A4 相机引导组件 -->
+    <A4CameraGuide
+      v-model:show="showCameraGuide"
+      :max-count="9 - imageList.length"
+      @capture="handleCameraCapture"
+      @error="handleCameraError"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { showSuccessToast, showFailToast, showImagePreview } from 'vant'
+import { showSuccessToast, showFailToast, showImagePreview, showConfirmDialog, showLoadingToast, closeToast } from 'vant'
 import { http } from '@/utils/request'
+import { compressImage } from '@/utils/imageCompress'
+import { detectFileTilt, type TiltResult } from '@/utils/imageTiltDetect'
+import A4CameraGuide from '@/components/A4CameraGuide.vue'
 import type { Task, TaskSubmission } from '@/api/types'
 
 const route = useRoute()
@@ -104,6 +151,7 @@ const submission = ref<TaskSubmission | null>(null)
 const imageList = ref<any[]>([])
 const feedback = ref('')
 const submitting = ref(false)
+const showCameraGuide = ref(false)
 
 // 加载任务详情
 const loadTask = async () => {
@@ -130,14 +178,109 @@ const loadSubmission = async () => {
   }
 }
 
-// 处理图片选择
-const handleAfterRead = (file: any) => {
-  // 这里可以添加图片压缩逻辑
-  console.log('Selected file:', file)
+// 打开相机引导
+const openCameraGuide = () => {
+  showCameraGuide.value = true
+}
+
+// 处理相机拍摄的照片
+const handleCameraCapture = (file: File) => {
+  // 照片已在 A4CameraGuide 中压缩，直接添加
+  const imageUrl = URL.createObjectURL(file)
+  imageList.value.push({
+    file,
+    url: imageUrl,
+    content: imageUrl,
+    isImage: true
+  })
+  
+  showSuccessToast('照片已添加')
+}
+
+// 处理相机错误
+const handleCameraError = (message: string) => {
+  showFailToast(message)
+}
+
+// 处理从相册选择
+const handleSelectFromAlbum = async (file: any) => {
+  if (!file || !file.file) return
+  
+  // 支持多选
+  const files = Array.isArray(file) ? file : [file]
+  
+  showLoadingToast({
+    message: '处理中...',
+    forbidClick: true,
+    duration: 0
+  })
+  
+  for (const f of files) {
+    const selectedFile = f.file as File
+    
+    try {
+      // 1. 检测倾斜
+      const result: TiltResult = await detectFileTilt(selectedFile)
+      
+      if (result.isTilted) {
+        closeToast()
+        
+        try {
+          await showConfirmDialog({
+            title: '照片倾斜提醒',
+            message: `检测到照片倾斜约 ${Math.abs(result.angle)}°，可能影响识别效果。是否重新拍摄？`,
+            confirmButtonText: '重新拍摄',
+            cancelButtonText: '继续使用'
+          })
+          // 用户选择重新拍摄，跳过这张照片
+          continue
+        } catch {
+          // 用户选择继续使用
+        }
+        
+        showLoadingToast({
+          message: '处理中...',
+          forbidClick: true,
+          duration: 0
+        })
+      }
+      
+      // 2. 压缩图片
+      const compressedFile = await compressImage(selectedFile)
+      
+      // 3. 添加到列表
+      const imageUrl = URL.createObjectURL(compressedFile)
+      imageList.value.push({
+        file: compressedFile,
+        url: imageUrl,
+        content: imageUrl,
+        isImage: true
+      })
+      
+    } catch (error) {
+      console.error('处理照片失败:', error)
+      // 压缩失败，使用原图
+      const imageUrl = URL.createObjectURL(selectedFile)
+      imageList.value.push({
+        file: selectedFile,
+        url: imageUrl,
+        content: imageUrl,
+        isImage: true
+      })
+    }
+  }
+  
+  closeToast()
+  showSuccessToast(`已添加 ${files.length} 张照片`)
 }
 
 // 删除图片
-const handleDeleteImage = (_file: any, index: number) => {
+const handleDeleteImage = (index: number) => {
+  // 释放 URL
+  const img = imageList.value[index]
+  if (img.url) {
+    URL.revokeObjectURL(img.url)
+  }
   imageList.value.splice(index, 1)
 }
 
@@ -150,6 +293,12 @@ const handleSubmit = async () => {
 
   const taskId = route.params.id as string
   submitting.value = true
+
+  showLoadingToast({
+    message: '提交中...',
+    forbidClick: true,
+    duration: 0
+  })
 
   try {
     // 1. 创建提交记录
@@ -165,9 +314,11 @@ const handleSubmit = async () => {
       await http.upload(`/tasks/submissions/${submitRes.id}/images`, formData)
     }
 
+    closeToast()
     showSuccessToast('提交成功')
     router.push('/parent/tasks')
   } catch (error: any) {
+    closeToast()
     showFailToast(error.response?.data?.detail || '提交失败')
   } finally {
     submitting.value = false
@@ -227,9 +378,55 @@ onMounted(async () => {
   .image-section {
     padding: 12px;
     background: #fff;
+    border-radius: 8px;
+    
+    .photo-actions {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      
+      .action-tip {
+        font-size: 12px;
+        color: #969799;
+      }
+    }
     
     .image-preview {
-      margin-top: 12px;
+      margin-top: 16px;
+      
+      .image-item {
+        position: relative;
+        
+        .delete-icon {
+          position: absolute;
+          top: -6px;
+          right: -6px;
+          font-size: 20px;
+          color: #ee0a24;
+          background: #fff;
+          border-radius: 50%;
+        }
+      }
+      
+      .add-more {
+        margin-top: 12px;
+        display: flex;
+        justify-content: center;
+      }
+    }
+    
+    .album-option {
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      
+      .option-label {
+        font-size: 13px;
+        color: #969799;
+      }
     }
   }
   
@@ -237,6 +434,7 @@ onMounted(async () => {
     margin-top: 12px;
     padding: 12px;
     background: #fff;
+    border-radius: 8px;
     
     .van-button {
       margin-top: 12px;
