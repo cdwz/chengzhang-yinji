@@ -1,0 +1,145 @@
+/* 全局样式 */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+  font-size: 16px;
+  background-color: #f5f7fa;
+}
+
+// 合规提示样式
+.compliance-warning {
+  color: #e6a23c;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+// 移动端适配
+@media (max-width: 768px) {
+  .el-message-box {
+    width: 90% !important;
+  }
+}
+
+// 任务卡片样式
+.task-card {
+  background: #fff;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 12px;
+  
+  &-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  
+  &-title {
+    font-size: 16px;
+    font-weight: 500;
+    color: #303133;
+  }
+  
+  &-tag {
+    &.optional {
+      background: #e6f7ff;
+      color: #1890ff;
+    }
+  }
+  
+  &-content {
+    color: #606266;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  
+  &-footer {
+    margin-top: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: #909399;
+    font-size: 12px;
+  }
+}
+
+// 评价表格样式
+.evaluation-table {
+  width: 100%;
+  border-collapse: collapse;
+  
+  th, td {
+    border: 1px solid #ebeef5;
+    padding: 8px 12px;
+    text-align: center;
+  }
+  
+  th {
+    background: #f5f7fa;
+    font-weight: 500;
+  }
+  
+  td {
+    &.student-name {
+      text-align: left;
+      font-weight: 500;
+    }
+  }
+}
+
+// 成长进度条
+.growth-progress {
+  &-bar {
+    height: 8px;
+    background: #ebeef5;
+    border-radius: 4px;
+    overflow: hidden;
+    
+    &-inner {
+      height: 100%;
+      background: linear-gradient(90deg, #409eff, #67c23a);
+      border-radius: 4px;
+      transition: width 0.3s;
+    }
+  }
+  
+  &-text {
+    margin-top: 8px;
+    color: #606266;
+    font-size: 14px;
+  }
+}
+
+// 匿名统计样式
+.anonymous-stats {
+  background: #f0f9eb;
+  border-radius: 8px;
+  padding: 16px;
+  
+  &-title {
+    font-size: 14px;
+    color: #67c23a;
+    margin-bottom: 8px;
+  }
+  
+  &-item {
+    display: flex;
+    align-items: center;
+    margin-bottom: 4px;
+    
+    &-label {
+      width: 80px;
+      color: #606266;
+    }
+    
+    &-value {
+      flex: 1;
+      color: #303133;
+    }
+  }
+}
