@@ -30,10 +30,7 @@
             label="密码"
             placeholder="请输入密码（至少6位）"
             type="password"
-            :rules="[
-              { required: true, message: '请输入密码' },
-              { min: 6, message: '密码至少6位' }
-            ]"
+            :rules="[{ required: true, message: '请输入密码' }]"
           />
           <van-field name="role" label="身份">
             <template #input>

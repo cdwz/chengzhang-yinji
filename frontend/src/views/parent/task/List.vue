@@ -4,7 +4,7 @@
       <div v-for="task in tasks" :key="task.id" class="task-card">
         <div class="task-card-header">
           <span class="task-card-title">{{ task.title }}</span>
-          <van-tag type="primary" size="small">选做</van-tag>
+          <van-tag type="primary">选做</van-tag>
         </div>
         <div class="task-card-content">
           {{ task.content || '暂无详细说明' }}

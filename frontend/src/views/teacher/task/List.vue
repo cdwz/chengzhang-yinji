@@ -25,7 +25,7 @@
           </template>
         </el-table-column>
         <el-table-column label="操作" width="100">
-          <template #default="{ row }">
+          <template #default>
             <el-button link type="primary">查看</el-button>
           </template>
         </el-table-column>
