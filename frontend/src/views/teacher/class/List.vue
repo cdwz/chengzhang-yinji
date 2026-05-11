@@ -15,6 +15,17 @@
         </div>
       </template>
       
+      <!-- 未关联学校提示 -->
+      <el-alert
+        v-if="!schoolLoaded && !loading"
+        title="未关联学校"
+        type="warning"
+        description="您的账号尚未关联学校，无法管理班级。请联系管理员将您添加到学校。"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 16px"
+      />
+      
       <!-- 空状态提示 -->
       <el-alert
         v-if="!loading && grades.length === 0"
@@ -52,6 +63,12 @@
             </el-button>
             <el-button link type="primary" @click="goStudyGroups(row.id)">
               小组管理
+            </el-button>
+            <el-button link type="warning" @click="openEditDialog(row)">
+              编辑
+            </el-button>
+            <el-button link type="danger" @click="confirmDeleteClass(row)">
+              删除
             </el-button>
           </template>
         </el-table-column>
@@ -109,13 +126,13 @@
     <!-- 导入学生对话框 -->
     <el-dialog v-model="showImport" title="导入学生" width="550px">
       <div class="import-tips">
-        <p>📋 支持 Excel (.xlsx) 和 CSV 格式文件</p>
-        <p>📝 文件需包含以下列：<b>姓名</b>（必填）、学号（可选）、性别（可选）</p>
+        <p>\uD83D\uDCCB 支持 Excel (.xlsx) 和 CSV 格式文件</p>
+        <p>\uD83D\uDCDD 模板包含列：<b>姓名</b>（必填）、<b>学号</b>（必填）、家长手机号（选填）、组名（选填，不存在自动创建）</p>
       </div>
       
       <div class="template-download">
         <el-link type="primary" @click="downloadTemplate">
-          <el-icon><Download /></el-icon> 下载导入模板
+          <el-icon><Download /></el-icon> 下载导入模板 (.csv)
         </el-link>
       </div>
       
@@ -137,15 +154,38 @@
         <el-button type="primary" @click="importStudents" :loading="importing">导入</el-button>
       </template>
     </el-dialog>
+    
+    <!-- 编辑班级对话框 -->
+    <el-dialog v-model="showEditDialog" title="编辑班级" width="500px">
+      <el-form :model="editForm" label-width="80px">
+        <el-form-item label="班级名称" required>
+          <el-input v-model="editForm.name" placeholder="如：1班、2班" />
+        </el-form-item>
+        <el-form-item label="所属年级">
+          <el-select v-model="editForm.grade_id" placeholder="选择年级" style="width: 100%">
+            <el-option
+              v-for="grade in grades"
+              :key="grade.id"
+              :label="grade.name"
+              :value="grade.id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="showEditDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveEditClass" :loading="savingEdit">保存</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Download, UploadFilled } from '@element-plus/icons-vue'
-import { getClasses, createClass as createClassApi, getGrades, createGrade as createGradeApi, getMySchool } from '@/api/schools'
+import { getClasses, createClass as createClassApi, getGrades, createGrade as createGradeApi, getMySchool, updateClass as updateClassApi, deleteClass as deleteClassApi } from '@/api/schools'
 import { importStudents as importStudentsApi } from '@/api/students'
 import type { Class, Grade } from '@/api/types'
 import type { UploadFile } from 'element-plus'
@@ -156,14 +196,25 @@ const loading = ref(false)
 const creating = ref(false)
 const creatingGrade = ref(false)
 const importing = ref(false)
+const deletingClass = ref(false)
 const classes = ref<Class[]>([])
 const grades = ref<Grade[]>([])
 const schoolId = ref<string>('')
+const schoolName = ref<string>('')
+const schoolLoaded = ref(false)
 const showGradeDialog = ref(false)
 const showCreateDialog = ref(false)
 const showImport = ref(false)
+const showEditDialog = ref(false)
+const savingEdit = ref(false)
 const currentClass = ref<Class | null>(null)
 const uploadFile = ref<File | null>(null)
+
+const editForm = reactive({
+  id: '',
+  name: '',
+  grade_id: ''
+})
 
 const gradeForm = reactive({
   name: '',
@@ -185,9 +236,12 @@ async function loadSchool() {
   try {
     const school = await getMySchool()
     schoolId.value = school.id
+    schoolName.value = school.name || ''
+    schoolLoaded.value = true
   } catch (error) {
     console.error('获取学校信息失败', error)
-    ElMessage.warning('请先关联学校')
+    schoolLoaded.value = false
+    ElMessage.warning('请先关联学校，请联系管理员添加学校归属')
   }
 }
 
@@ -263,16 +317,24 @@ function handleFileChange(file: UploadFile) {
 }
 
 function downloadTemplate() {
-  // 创建模板内容
-  const templateContent = '姓名\t学号\t性别\n张三\t001\t男\n李四\t002\t女'
-  const blob = new Blob([templateContent], { type: 'text/plain;charset=utf-8' })
+  // 生成CSV模板（UTF-8 BOM，Excel可直接打开）
+  const headers = ['姓名', '学号', '家长手机号', '组名']
+  const sampleRow1 = ['张三', '2025001', '13800000001', '第一组']
+  const sampleRow2 = ['李四', '2025002', '', '第一组']
+  const sampleRow3 = ['王五', '2025003', '', '']
+  
+  const bom = '\uFEFF'
+  const lines = [headers.join(','), sampleRow1.join(','), sampleRow2.join(','), sampleRow3.join(',')]
+  const csvContent = bom + lines.join('\n')
+  
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
-  link.download = '学生导入模板.txt'
+  link.download = '学生导入模板.csv'
   link.click()
   URL.revokeObjectURL(url)
-  ElMessage.success('模板已下载')
+  ElMessage.success('模板已下载，可用Excel打开编辑')
 }
 
 async function createClass() {
@@ -315,6 +377,63 @@ async function importStudents() {
     ElMessage.error(error?.message || '导入失败')
   } finally {
     importing.value = false
+  }
+}
+
+// 编辑班级
+function openEditDialog(cls: Class) {
+  editForm.id = cls.id
+  editForm.name = cls.name
+  editForm.grade_id = cls.grade?.id || ''
+  showEditDialog.value = true
+}
+
+async function saveEditClass() {
+  if (!editForm.name.trim()) {
+    ElMessage.warning('班级名称不能为空')
+    return
+  }
+  
+  savingEdit.value = true
+  try {
+    await updateClassApi(editForm.id, {
+      name: editForm.name,
+      grade_id: editForm.grade_id || undefined
+    })
+    ElMessage.success('班级修改成功')
+    showEditDialog.value = false
+    loadClasses()
+  } catch (error: any) {
+    ElMessage.error(error?.message || '修改失败')
+  } finally {
+    savingEdit.value = false
+  }
+}
+
+// 删除班级
+async function confirmDeleteClass(cls: Class) {
+  const count = cls.student_count || 0
+  const message = count > 0
+    ? `该班级下有 ${count} 名学生，删除后所有数据（任务、评价、小组等）将无法恢复，请确认是否需要删除？`
+    : '删除后无法恢复，请确认是否需要删除？'
+
+  try {
+    await ElMessageBox.confirm(
+      message,
+      `删除「${cls.name}」`,
+      { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' }
+    )
+    
+    deletingClass.value = true
+    await deleteClassApi(cls.id)
+    ElMessage.success('班级已删除')
+    loadClasses()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error(error?.message || '删除失败')
+    }
+  } finally {
+    deletingClass.value = false
   }
 }
 </script>

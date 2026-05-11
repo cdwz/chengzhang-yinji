@@ -35,6 +35,8 @@ class ClassReportRequest(BaseModel):
     """班级报告请求"""
     class_id: UUID
     period: str  # week, month, semester
+    subject: Optional[str] = None  # 科目筛选
+    study_group_id: Optional[UUID] = None  # 学习小组筛选
 
 
 class ClassOverview(BaseModel):
@@ -253,9 +255,16 @@ async def get_class_report(
         start_date = end_date - timedelta(days=120)
     
     # 获取班级学生数
-    student_result = await db.execute(
-        select(func.count(Student.id)).where(Student.class_id == request.class_id)
-    )
+    student_query = select(func.count(Student.id)).where(Student.class_id == request.class_id)
+    # 如果指定了学习小组，只统计该小组学生
+    if request.study_group_id:
+        student_query = select(func.count(Student.id)).where(
+            and_(
+                Student.class_id == request.class_id,
+                Student.study_group_id == request.study_group_id
+            )
+        )
+    student_result = await db.execute(student_query)
     total_students = student_result.scalar() or 0
     
     # 获取活跃学生数（有提交记录）
@@ -273,13 +282,16 @@ async def get_class_report(
     active_students = active_result.scalar() or 0
     
     # 获取任务完成率
+    task_conditions = [
+        LearningTask.class_id == request.class_id,
+        LearningTask.task_date >= start_date.date()
+    ]
+    # 如果指定了科目，只统计该科目任务
+    if request.subject:
+        task_conditions.append(LearningTask.subject == request.subject)
+    
     task_result = await db.execute(
-        select(func.count(LearningTask.id)).where(
-            and_(
-                LearningTask.class_id == request.class_id,
-                LearningTask.task_date >= start_date.date()
-            )
-        )
+        select(func.count(LearningTask.id)).where(and_(*task_conditions))
     )
     total_tasks = task_result.scalar() or 0
     
@@ -333,7 +345,8 @@ async def get_class_report(
         .where(
             and_(
                 LearningTask.class_id == request.class_id,
-                LearningTask.task_date >= start_date.date()
+                LearningTask.task_date >= start_date.date(),
+                *( [LearningTask.subject == request.subject] if request.subject else [] )
             )
         )
         .group_by(LearningTask.subject)
@@ -347,11 +360,15 @@ async def get_class_report(
         ))
     
     # 学生排行
+    ranking_conditions = [Student.class_id == request.class_id]
+    if request.study_group_id:
+        ranking_conditions.append(Student.study_group_id == request.study_group_id)
+    
     ranking_result = await db.execute(
         select(Student, func.count(TaskSubmissionModel.id).label('submit_count'))
         .select_from(Student)
         .outerjoin(TaskSubmissionModel, Student.id == TaskSubmissionModel.student_id)
-        .where(Student.class_id == request.class_id)
+        .where(and_(*ranking_conditions))
         .group_by(Student.id)
         .order_by(func.count(TaskSubmissionModel.id).desc())
         .limit(5)

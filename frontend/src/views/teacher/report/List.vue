@@ -11,6 +11,22 @@
         @click="showClassPicker = true"
       />
       <van-field
+        v-model="selectedSubject"
+        is-link
+        readonly
+        label="科目"
+        placeholder="全部科目"
+        @click="showSubjectPicker = true"
+      />
+      <van-field
+        v-model="selectedGroupName"
+        is-link
+        readonly
+        label="学习小组"
+        placeholder="全部小组"
+        @click="showGroupPicker = true"
+      />
+      <van-field
         v-model="selectedPeriod"
         is-link
         readonly
@@ -146,15 +162,36 @@
         @cancel="showPeriodPicker = false"
       />
     </van-popup>
+    
+    <!-- 科目选择器 -->
+    <van-popup v-model:show="showSubjectPicker" position="bottom" round>
+      <van-picker
+        :columns="subjectColumns"
+        title="选择科目"
+        @confirm="onSubjectConfirm"
+        @cancel="showSubjectPicker = false"
+      />
+    </van-popup>
+    
+    <!-- 学习小组选择器 -->
+    <van-popup v-model:show="showGroupPicker" position="bottom" round>
+      <van-picker
+        :columns="groupColumns"
+        title="选择学习小组"
+        @confirm="onGroupConfirm"
+        @cancel="showGroupPicker = false"
+      />
+    </van-popup>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { showSuccessToast, showFailToast } from 'vant'
-import { getClasses } from '@/api/schools'
+import { getClasses, getClass } from '@/api/schools'
 import { getClassReport, exportClassPdf } from '@/api/reports'
-import type { Class } from '@/api/types'
+import { getStudyGroups } from '@/api/students'
+import type { Class, StudyGroup } from '@/api/types'
 
 // 状态
 const classes = ref<Class[]>([])
@@ -164,8 +201,20 @@ const selectedPeriod = ref('本周')
 const selectedPeriodValue = ref<'week' | 'month' | 'semester'>('week')
 const showClassPicker = ref(false)
 const showPeriodPicker = ref(false)
+const showSubjectPicker = ref(false)
+const showGroupPicker = ref(false)
 const chartType = ref('task')
 const loading = ref(false)
+
+// 科目筛选
+const classSubjects = ref<string[]>([])
+const selectedSubject = ref('')
+const selectedSubjectValue = ref<string>('')
+
+// 学习小组筛选
+const studyGroups = ref<StudyGroup[]>([])
+const selectedGroupName = ref('')
+const selectedGroupId = ref<string>('')
 
 // 总览数据
 const overview = reactive({
@@ -202,6 +251,24 @@ const periodColumns = [
   { text: '本学期', value: 'semester' }
 ]
 
+// 科目选择器列
+const subjectColumns = computed(() => {
+  const cols = [{ text: '全部科目', value: '' }]
+  classSubjects.value.forEach(s => {
+    cols.push({ text: s, value: s })
+  })
+  return cols
+})
+
+// 学习小组选择器列
+const groupColumns = computed(() => {
+  const cols = [{ text: '全部小组', value: '' }]
+  studyGroups.value.forEach(g => {
+    cols.push({ text: g.name, value: g.id })
+  })
+  return cols
+})
+
 // 获取排行标签类型
 const getRankType = (index: number) => {
   if (index === 0) return 'danger'
@@ -218,10 +285,27 @@ const loadClasses = async () => {
       const first = classes.value[0]
       selectedClass.value = first.name
       selectedClassId.value = first.id
+      loadClassData()
       loadReportData()
     }
   } catch (error) {
     showFailToast('加载班级失败')
+  }
+}
+
+// 加载班级数据（科目、小组）
+const loadClassData = async () => {
+  if (!selectedClassId.value) return
+  
+  try {
+    // 加载班级详情获取科目
+    const classDetail = await getClass(selectedClassId.value)
+    classSubjects.value = classDetail.subjects || ['语文', '数学', '英语']
+    
+    // 加载学习小组
+    studyGroups.value = await getStudyGroups(selectedClassId.value)
+  } catch (error) {
+    console.error('加载班级数据失败', error)
   }
 }
 
@@ -231,10 +315,20 @@ const loadReportData = async () => {
   
   loading.value = true
   try {
-    const data = await getClassReport({
+    const params: any = {
       class_id: selectedClassId.value,
       period: selectedPeriodValue.value
-    })
+    }
+    
+    // 添加筛选参数
+    if (selectedSubjectValue.value) {
+      params.subject = selectedSubjectValue.value
+    }
+    if (selectedGroupId.value) {
+      params.study_group_id = selectedGroupId.value
+    }
+    
+    const data = await getClassReport(params)
     
     // 更新数据
     overview.totalStudents = data.overview.total_students
@@ -286,6 +380,30 @@ const onClassConfirm = ({ selectedOptions }: any) => {
   selectedClass.value = selected.text
   selectedClassId.value = selected.value
   showClassPicker.value = false
+  // 重置筛选
+  selectedSubject.value = ''
+  selectedSubjectValue.value = ''
+  selectedGroupName.value = ''
+  selectedGroupId.value = ''
+  loadClassData()
+  loadReportData()
+}
+
+// 科目确认
+const onSubjectConfirm = ({ selectedOptions }: any) => {
+  const selected = selectedOptions[0]
+  selectedSubject.value = selected.text === '全部科目' ? '' : selected.text
+  selectedSubjectValue.value = selected.value
+  showSubjectPicker.value = false
+  loadReportData()
+}
+
+// 学习小组确认
+const onGroupConfirm = ({ selectedOptions }: any) => {
+  const selected = selectedOptions[0]
+  selectedGroupName.value = selected.text === '全部小组' ? '' : selected.text
+  selectedGroupId.value = selected.value
+  showGroupPicker.value = false
   loadReportData()
 }
 

@@ -116,8 +116,8 @@
     <div v-if="submission" class="section-title">已提交记录</div>
     <van-cell-group v-if="submission" inset class="submitted-images">
       <van-grid :column-num="3" :gutter="8">
-        <van-grid-item v-for="(img, index) in submission.images" :key="index">
-          <van-image :src="img.image_url" fit="cover" @click="previewImage(img.image_url)" />
+        <van-grid-item v-for="(img, index) in submissionImages" :key="index">
+          <van-image :src="typeof img === 'string' ? img : img.image_url" fit="cover" @click="previewImage(typeof img === 'string' ? img : img.image_url)" />
         </van-grid-item>
       </van-grid>
     </van-cell-group>
@@ -133,7 +133,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showSuccessToast, showFailToast, showImagePreview, showConfirmDialog, showLoadingToast, closeToast } from 'vant'
 import { http } from '@/utils/request'
@@ -152,6 +152,12 @@ const imageList = ref<any[]>([])
 const feedback = ref('')
 const submitting = ref(false)
 const showCameraGuide = ref(false)
+
+// 计算属性：处理 submission.images 的类型
+const submissionImages = computed(() => {
+  if (!submission.value?.images) return []
+  return submission.value.images
+})
 
 // 加载任务详情
 const loadTask = async () => {

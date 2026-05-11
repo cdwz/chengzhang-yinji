@@ -56,35 +56,62 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/teacher/class/Dimensions.vue'),
         meta: { title: '评价维度设置' }
       },
+      // 学习任务子菜单
       {
         path: 'tasks',
         name: 'TeacherTasks',
         component: () => import('@/views/teacher/task/List.vue'),
-        meta: { title: '学习任务' }
+        meta: { title: '任务列表' }
       },
       {
         path: 'tasks/create',
         name: 'CreateTask',
         component: () => import('@/views/teacher/task/Create.vue'),
-        meta: { title: '发布任务' }
+        meta: { title: '新建任务' }
       },
       {
-        path: 'tasks/:taskId/submissions',
+        path: 'tasks/submissions',
         name: 'TaskSubmissions',
         component: () => import('@/views/teacher/task/Submissions.vue'),
         meta: { title: '提交查看' }
       },
       {
+        path: 'tasks/stats',
+        name: 'TaskStats',
+        component: () => import('@/views/teacher/task/Stats.vue'),
+        meta: { title: '任务统计' }
+      },
+      {
+        path: 'tasks/:taskId/submissions',
+        name: 'TaskSubmissionsDetail',
+        component: () => import('@/views/teacher/task/Submissions.vue'),
+        meta: { title: '提交查看' }
+      },
+      // 日常评价子菜单
+      {
         path: 'evaluations',
         name: 'TeacherEvaluations',
         component: () => import('@/views/teacher/evaluation/Grid.vue'),
-        meta: { title: '日常评价' }
+        meta: { title: '评价录入' }
       },
+      {
+        path: 'evaluations/records',
+        name: 'EvaluationRecords',
+        component: () => import('@/views/teacher/evaluation/Records.vue'),
+        meta: { title: '评价记录' }
+      },
+      // 数据分析
       {
         path: 'reports',
         name: 'TeacherReports',
         component: () => import('@/views/teacher/report/List.vue'),
         meta: { title: '数据分析' }
+      },
+      {
+        path: 'achievements',
+        name: 'TeacherAchievements',
+        component: () => import('@/views/teacher/achievement/List.vue'),
+        meta: { title: '学生成就' }
       },
       {
         path: 'messages',
@@ -121,7 +148,7 @@ const routes: RouteRecordRaw[] = [
         path: 'tasks/:id/submit',
         name: 'TaskSubmit',
         component: () => import('@/views/parent/task/Submit.vue'),
-        meta: { title: '提交作业' }
+        meta: { title: '提交记录' }
       },
       {
         path: 'evaluations',
@@ -146,6 +173,13 @@ const routes: RouteRecordRaw[] = [
         name: 'ParentMessages',
         component: () => import('@/views/parent/Message.vue'),
         meta: { title: '消息通知' }
+      },
+      // 我的页面（修复404）
+      {
+        path: 'me',
+        name: 'ParentProfile',
+        component: () => import('@/views/parent/Profile.vue'),
+        meta: { title: '我的' }
       }
     ]
   },

@@ -105,6 +105,7 @@ class Class(Base):
     name = Column(String(50), nullable=False)  # 如"一年级1班"
     homeroom_teacher_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     invite_code = Column(String(10), unique=True, nullable=False)  # 家长绑定用
+    subjects = Column(JSONB, default=list)  # 班级启用科目列表，默认["语文","数学","英语"]
     created_at = Column(DateTime, default=datetime.utcnow)
     
     # 关系
@@ -213,6 +214,8 @@ class LearningTask(Base):
     class_id = Column(UUID(as_uuid=True), ForeignKey("classes.id"), nullable=False)
     subject = Column(String(50), nullable=False)
     group_id = Column(UUID(as_uuid=True), ForeignKey("study_groups.id"))  # NULL表示全班
+    target_type = Column(String(20), default='all')  # all/groups/students
+    target_ids = Column(JSONB, default=list)  # 目标小组或学生ID列表
     title = Column(String(200), nullable=False)
     content = Column(Text)
     suggested_duration = Column(Integer)  # 建议时长（分钟）
@@ -303,7 +306,8 @@ class EvaluationDimension(Base):
     class_id = Column(UUID(as_uuid=True), ForeignKey("classes.id"), nullable=False)
     name = Column(String(100), nullable=False)
     subject = Column(String(50))
-    type = Column(String(20), nullable=False)  # star, grade, boolean, score, text
+    type = Column(String(20), nullable=False)  # star, grade, boolean, score, ab_score, text
+    config = Column(JSONB, default=dict)  # 类型配置：score -> {score_type, max_score}, ab_score -> {total, a_score, b_score}
     sort_order = Column(Integer, default=0)
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)

@@ -55,6 +55,7 @@ export interface Class {
   invite_code: string
   grade: Grade
   student_count: number
+  subjects: string[]
 }
 
 export interface Student {
@@ -64,6 +65,7 @@ export interface Student {
   student_number?: string
   class_id: string
   study_group_id?: string
+  status?: 'active' | 'leave' | 'transfer' | 'leave_school'
   created_at: string
 }
 
@@ -91,6 +93,10 @@ export interface Task {
   task_date: string
   is_optional: boolean
   group_name?: string
+  target_type: string
+  target_names?: string
+  submission_count: number
+  total_student_count: number
   created_at: string
 }
 
@@ -107,18 +113,20 @@ export interface TaskSubmission {
   id: string
   task_id: string
   student_id: string
-  student?: Student
+  student_name?: string
   feedback?: string
   submitted_at: string
-  images: SubmissionImage[]
+  images: SubmissionImage[] | string[]
   annotations?: any[]
 }
 
 export interface EvaluationDimension {
   id: string
+  class_id: string
   name: string
   subject?: string
-  type: 'star' | 'grade' | 'boolean' | 'score' | 'text'
+  type: 'star' | 'grade' | 'score' | 'ab_score' | 'boolean' | 'text'
+  config: Record<string, any>
   sort_order: number
   is_active: boolean
 }
@@ -130,6 +138,12 @@ export interface EvaluationRecord {
   record_date: string
   value: string
   updated_at: string
+  // 扩展字段
+  date?: string
+  a_score?: number
+  b_score?: number
+  student?: Student
+  dimension?: EvaluationDimension
 }
 
 export interface MessageResponse {

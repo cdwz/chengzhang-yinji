@@ -22,6 +22,16 @@ export function getStudent(id: string) {
   return http.get<Student>(`/students/${id}`)
 }
 
+// 编辑学生
+export function updateStudent(id: string, data: { name?: string; student_number?: string; study_group_id?: string; status?: string }) {
+  return http.put<Student>(`/students/${id}`, data)
+}
+
+// 转班
+export function transferStudent(id: string, targetClassId: string) {
+  return http.put<MessageResponse>(`/students/${id}/transfer`, { target_class_id: targetClassId })
+}
+
 // 删除学生
 export function deleteStudent(id: string) {
   return http.delete<MessageResponse>(`/students/${id}`)

@@ -126,6 +126,7 @@ class ClassResponse(BaseModel):
     invite_code: str
     grade: GradeResponse
     student_count: int = 0
+    subjects: List[str] = ["语文", "数学", "英语"]
 
     class Config:
         from_attributes = True
@@ -204,7 +205,9 @@ class StudyGroupResponse(BaseModel):
 class TaskCreate(BaseModel):
     class_id: UUID
     subject: str = Field(..., max_length=50, description="科目")
-    group_id: Optional[UUID] = None  # NULL表示全班
+    group_id: Optional[UUID] = None  # NULL表示全班（旧字段，兼容）
+    target_type: str = Field(default='all', description="发布对象类型: all/groups/students")
+    target_ids: Optional[List[UUID]] = Field(default=None, description="目标小组或学生ID列表")
     title: str = Field(..., max_length=200, description="标题")
     content: Optional[str] = None
     suggested_duration: Optional[int] = Field(None, ge=1, le=180, description="建议时长(分钟)")
@@ -220,6 +223,10 @@ class TaskResponse(BaseModel):
     task_date: date
     is_optional: bool = True
     group_name: Optional[str] = None
+    target_type: str = 'all'
+    target_names: Optional[str] = None  # 如 "第一组,第二组" 或 "张三,李四"
+    submission_count: int = 0  # 已提交人数
+    total_student_count: int = 0  # 总人数
     created_at: datetime
 
     class Config:
@@ -234,6 +241,7 @@ class TaskSubmissionResponse(BaseModel):
     id: UUID
     task_id: UUID
     student_id: UUID
+    student_name: Optional[str] = None
     feedback: Optional[str] = None
     submitted_at: datetime
     images: List[str] = []

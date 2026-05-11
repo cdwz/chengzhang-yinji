@@ -39,7 +39,7 @@
         <el-table-column prop="student_name" label="学生" width="120">
           <template #default="{ row }">
             <div class="student-info">
-              <span>{{ row.student?.name }}</span>
+              <span>{{ row.student_name || row.student?.name }}</span>
               <el-tag v-if="row.student?.study_group" size="small" type="info">
                 {{ row.student.study_group.name }}
               </el-tag>
@@ -49,19 +49,19 @@
         
         <el-table-column label="提交状态" width="100">
           <template #default="{ row }">
-            <el-tag v-if="row.images?.length > 0" type="success">已提交</el-tag>
+            <el-tag v-if="getImages(row).length > 0" type="success">已提交</el-tag>
             <el-tag v-else type="info">未提交</el-tag>
           </template>
         </el-table-column>
         
         <el-table-column label="作业图片" min-width="300">
           <template #default="{ row }">
-            <div class="image-thumbnails" v-if="row.images?.length > 0">
+            <div class="image-thumbnails" v-if="getImages(row).length > 0">
               <el-image
-                v-for="(img, idx) in row.images.slice(0, 5)"
+                v-for="(img, idx) in getImages(row).slice(0, 5)"
                 :key="idx"
                 :src="img.thumbnail_url || img.image_url"
-                :preview-src-list="row.images.map((i: any) => i.image_url)"
+                :preview-src-list="getImages(row).map((i: any) => i.image_url)"
                 :initial-index="idx"
                 fit="cover"
                 class="thumbnail"
@@ -72,8 +72,8 @@
                   </div>
                 </template>
               </el-image>
-              <div v-if="row.images.length > 5" class="more-images">
-                +{{ row.images.length - 5 }}
+              <div v-if="getImages(row).length > 5" class="more-images">
+                +{{ getImages(row).length - 5 }}
               </div>
             </div>
             <span v-else class="no-image">暂无提交</span>
@@ -97,7 +97,7 @@
         <el-table-column label="操作" width="200" fixed="right">
           <template #default="{ row }">
             <el-button 
-              v-if="row.images?.length > 0"
+              v-if="getImages(row).length > 0"
               link 
               type="primary" 
               @click="annotateSubmission(row)"
@@ -122,7 +122,7 @@
       <div class="annotation-container">
         <div class="image-selector">
           <div 
-            v-for="(img, idx) in currentSubmission?.images"
+            v-for="(img, idx) in currentImages"
             :key="idx"
             class="image-thumb"
             :class="{ active: currentImageIndex === idx }"
@@ -134,9 +134,9 @@
         
         <div class="annotation-workspace">
           <AnnotationCanvas
-            v-if="currentSubmission && currentImageIndex !== null"
-            :image-id="currentSubmission.images[currentImageIndex]?.id"
-            :image-url="currentSubmission.images[currentImageIndex]?.image_url"
+            v-if="currentSubmission && currentImageIndex !== null && currentImages[currentImageIndex]"
+            :image-id="currentImages[currentImageIndex].id"
+            :image-url="currentImages[currentImageIndex].image_url"
             :annotations="currentImageAnnotations"
             @save="handleAnnotationSave"
           />
@@ -153,7 +153,7 @@ import { ElMessage } from 'element-plus'
 import { Download, Search, Picture } from '@element-plus/icons-vue'
 import { getSubmissions, getTask } from '@/api/tasks'
 import AnnotationCanvas from '@/components/AnnotationCanvas.vue'
-import type { Task, TaskSubmission } from '@/api/types'
+import type { Task, TaskSubmission, SubmissionImage } from '@/api/types'
 
 const route = useRoute()
 const taskId = route.params.taskId as string
@@ -171,21 +171,41 @@ const filters = reactive({
   keyword: ''
 })
 
+// 辅助函数：获取图片数组
+function getImages(submission: TaskSubmission): SubmissionImage[] {
+  if (!submission.images) return []
+  if (submission.images.length === 0) return []
+  // 检查第一个元素类型
+  const first = submission.images[0]
+  if (typeof first === 'string') {
+    // 如果是字符串数组，转换为 SubmissionImage 对象
+    return (submission.images as string[]).map((url, idx) => ({
+      id: `img-${idx}`,
+      submission_id: submission.id,
+      image_url: url,
+      thumbnail_url: url,
+      sort_order: idx,
+      created_at: submission.submitted_at
+    }))
+  }
+  return submission.images as SubmissionImage[]
+}
+
 // 过滤后的提交列表
 const filteredSubmissions = computed(() => {
   let result = submissions.value
   
   if (filters.keyword) {
     result = result.filter(s => 
-      s.student?.name.includes(filters.keyword)
+      s.student_name?.includes(filters.keyword)
     )
   }
   
   if (filters.status) {
     if (filters.status === 'submitted') {
-      result = result.filter(s => s.images?.length > 0)
+      result = result.filter(s => getImages(s).length > 0)
     } else {
-      result = result.filter(s => !s.images || s.images.length === 0)
+      result = result.filter(s => getImages(s).length === 0)
     }
   }
   
@@ -197,6 +217,12 @@ const currentImageAnnotations = computed(() => {
   if (!currentSubmission.value || currentImageIndex.value === null) return []
   // TODO: 从批注API获取当前图片的批注
   return []
+})
+
+// 当前提交的图片列表（类型安全）
+const currentImages = computed(() => {
+  if (!currentSubmission.value) return []
+  return getImages(currentSubmission.value)
 })
 
 onMounted(() => {
@@ -229,7 +255,7 @@ function formatTime(time: string) {
 
 function annotateSubmission(submission: TaskSubmission) {
   currentSubmission.value = submission
-  currentImageIndex.value = submission.images?.length > 0 ? 0 : null
+  currentImageIndex.value = getImages(submission).length > 0 ? 0 : null
   showAnnotation.value = true
 }
 

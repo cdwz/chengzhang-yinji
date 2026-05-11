@@ -18,6 +18,24 @@
         placeholder="选择班级"
         @click="showClassPicker = true"
       />
+      <!-- 新增：科目筛选 -->
+      <van-field
+        v-model="selectedSubject"
+        is-link
+        readonly
+        label="科目"
+        placeholder="全部科目"
+        @click="showSubjectPicker = true"
+      />
+      <!-- 新增：组别筛选 -->
+      <van-field
+        v-model="selectedGroupLabel"
+        is-link
+        readonly
+        label="组别"
+        placeholder="全部组别"
+        @click="showGroupPicker = true"
+      />
     </van-cell-group>
 
     <!-- 评价维度选择 -->
@@ -66,11 +84,13 @@
           </div>
           
           <div class="grid-cell rating-cell">
-            <component
-              :is="getRatingComponent()"
-              v-model="evaluations[student.id]"
-              v-bind="getRatingProps()"
-            />
+            <StarInput v-if="currentDimension?.type === 'star'" v-model="evaluations[student.id]" />
+            <GradeInput v-else-if="currentDimension?.type === 'grade'" v-model="evaluations[student.id]" />
+            <ScoreInput v-else-if="currentDimension?.type === 'score'" v-model="evaluations[student.id]" :score-type="currentDimension?.config?.score_type || '100'" :max-score="currentDimension?.config?.max_score || 100" />
+            <ABScoreInput v-else-if="currentDimension?.type === 'ab_score'" v-model="evaluations[student.id]" :total="currentDimension?.config?.total || 150" :a-max="currentDimension?.config?.a_score || 100" :b-max="currentDimension?.config?.b_score || 50" />
+            <BooleanInput v-else-if="currentDimension?.type === 'boolean'" v-model="evaluations[student.id]" />
+            <TextInput v-else-if="currentDimension?.type === 'text'" v-model="evaluations[student.id]" />
+            <van-field v-else v-model="evaluations[student.id]" placeholder="输入评价" />
           </div>
           
           <div class="grid-cell action-cell">
@@ -90,6 +110,9 @@
       <div class="batch-actions">
         <van-button type="default" :loading="copying" @click="copyFromYesterday" style="margin-bottom: 12px">
           <van-icon name="description" /> 复制前一天数据
+        </van-button>
+        <van-button type="default" @click="showBatchAssign = true" style="margin-bottom: 12px">
+          <van-icon name="edit" /> 全部设为
         </van-button>
         <van-button type="primary" block :loading="saving" @click="saveAll">
           批量保存评价
@@ -132,6 +155,34 @@
         @cancel="showClassPicker = false"
       />
     </van-popup>
+
+    <!-- 科目选择器 -->
+    <van-popup v-model:show="showSubjectPicker" position="bottom" round>
+      <van-picker
+        :columns="subjectColumns"
+        title="选择科目"
+        @confirm="onSubjectConfirm"
+        @cancel="showSubjectPicker = false"
+      />
+    </van-popup>
+
+    <!-- 组别选择器 -->
+    <van-popup v-model:show="showGroupPicker" position="bottom" round>
+      <van-picker
+        :columns="groupColumns"
+        title="选择组别"
+        @confirm="onGroupConfirm"
+        @cancel="showGroupPicker = false"
+      />
+    </van-popup>
+
+    <!-- 批量赋值弹窗 -->
+    <van-dialog v-model:show="showBatchAssign" title="全部设为" show-cancel-button @confirm="doBatchAssign">
+      <div style="padding: 16px">
+        <p style="margin-bottom:8px;color:#909399;font-size:13px">为所有学生设置相同的评价值</p>
+        <van-field v-model="batchValue" placeholder="输入评价值" />
+      </div>
+    </van-dialog>
   </div>
 </template>
 
@@ -139,9 +190,9 @@
 import { ref, reactive, computed, watch, onMounted } from 'vue'
 import { showSuccessToast, showFailToast } from 'vant'
 import { getClasses } from '@/api/schools'
-import { getStudents } from '@/api/students'
+import { getStudents, getStudyGroups } from '@/api/students'
 import { getDimensions, getEvaluations, saveEvaluation, saveBatchEvaluations } from '@/api/evaluations'
-import type { Class, Student, EvaluationDimension } from '@/api/types'
+import type { Class, Student, EvaluationDimension, StudyGroup } from '@/api/types'
 
 // 状态
 const classes = ref<Class[]>([])
@@ -150,6 +201,11 @@ const dimensions = ref<EvaluationDimension[]>([])
 const evaluations = reactive<Record<string, any>>({})
 const saving = ref(false)
 const copying = ref(false)
+const showBatchAssign = ref(false)
+
+// 科目和组别
+const availableSubjects = ref<string[]>([])
+const studyGroups = ref<StudyGroup[]>([])
 
 // 键盘导航
 const rowRefs = ref<HTMLElement[]>([])
@@ -159,9 +215,14 @@ const focusedIndex = ref(-1)
 const selectedDate = ref(new Date().toISOString().split('T')[0])
 const selectedClass = ref('')
 const selectedClassId = ref('')
+const selectedSubject = ref('')
+const selectedGroupId = ref('')
+const selectedGroupLabel = ref('')
 const selectedDimensionId = ref('')
 const showDatePicker = ref(false)
 const showClassPicker = ref(false)
+const showSubjectPicker = ref(false)
+const showGroupPicker = ref(false)
 const datePickerValue = ref(['2024', '01', '01'])
 
 // 快捷评语模板
@@ -182,6 +243,20 @@ const classColumns = computed(() => {
   }))
 })
 
+// 科目选择器列
+const subjectColumns = computed(() => {
+  const cols = [{ text: '全部科目', value: '' }]
+  availableSubjects.value.forEach(s => cols.push({ text: s, value: s }))
+  return cols
+})
+
+// 组别选择器列
+const groupColumns = computed(() => {
+  const cols = [{ text: '全部组别', value: '' }]
+  studyGroups.value.forEach(g => cols.push({ text: g.name, value: g.id }))
+  return cols
+})
+
 // 获取当前维度的类型
 const currentDimension = computed(() => {
   return dimensions.value.find(d => d.id === selectedDimensionId.value)
@@ -195,6 +270,7 @@ const loadClasses = async () => {
       const first = classes.value[0]
       selectedClass.value = first.name
       selectedClassId.value = first.id
+      availableSubjects.value = first.subjects || ['语文', '数学', '英语']
       await loadData()
     }
   } catch (error) {
@@ -206,10 +282,22 @@ const loadClasses = async () => {
 const loadData = async () => {
   if (!selectedClassId.value) return
   
+  // 加载学习小组
+  try {
+    studyGroups.value = await getStudyGroups(selectedClassId.value)
+  } catch {
+    studyGroups.value = []
+  }
+  
   // 加载学生
   try {
     const res = await getStudents({ class_id: selectedClassId.value })
-    students.value = res.items
+    let studentsList = res.items
+    // 根据组别筛选
+    if (selectedGroupId.value) {
+      studentsList = studentsList.filter(s => s.study_group_id === selectedGroupId.value)
+    }
+    students.value = studentsList
   } catch (error) {
     showFailToast('加载学生失败')
   }
@@ -217,8 +305,14 @@ const loadData = async () => {
   // 加载评价维度
   try {
     dimensions.value = await getDimensions(selectedClassId.value)
+    // 根据科目筛选
+    if (selectedSubject.value) {
+      dimensions.value = dimensions.value.filter(d => d.subject === selectedSubject.value)
+    }
     if (dimensions.value.length > 0) {
       selectedDimensionId.value = dimensions.value[0].id
+    } else {
+      selectedDimensionId.value = ''
     }
   } catch (error) {
     showFailToast('加载评价维度失败')
@@ -252,35 +346,12 @@ watch([selectedDimensionId, selectedDate], () => {
   loadExistingEvaluations()
 })
 
-// 获取评分组件
-const getRatingComponent = () => {
-  const type = currentDimension.value?.type
-  switch (type) {
-    case 'star':
-      return 'van-rate'
-    case 'boolean':
-      return 'van-switch'
-    case 'score':
-      return 'van-stepper'
-    default:
-      return 'van-field'
-  }
-}
-
-// 获取评分组件属性
-const getRatingProps = () => {
-  const type = currentDimension.value?.type
-  switch (type) {
-    case 'star':
-      return { count: 5, size: 20 }
-    case 'boolean':
-      return { size: 20 }
-    case 'score':
-      return { min: 0, max: 100, step: 5 }
-    default:
-      return { placeholder: '输入评语', autosize: true }
-  }
-}
+import StarInput from '@/components/evaluation/StarInput.vue'
+import GradeInput from '@/components/evaluation/GradeInput.vue'
+import ScoreInput from '@/components/evaluation/ScoreInput.vue'
+import ABScoreInput from '@/components/evaluation/ABScoreInput.vue'
+import BooleanInput from '@/components/evaluation/BooleanInput.vue'
+import TextInput from '@/components/evaluation/TextInput.vue'
 
 // 获取小组名称
 const getGroupName = (_groupId: string) => {
@@ -336,13 +407,23 @@ const saveAll = async () => {
 // 应用快捷评语
 const applyTemplate = (tpl: string) => {
   if (currentDimension.value?.type === 'text') {
-    // 为所有未填写的应用
     students.value.forEach(s => {
       if (!evaluations[s.id]) {
         evaluations[s.id] = tpl
       }
     })
   }
+}
+
+// 批量赋值
+const batchValue = ref('')
+const doBatchAssign = () => {
+  if (!batchValue.value) return
+  students.value.forEach(s => {
+    evaluations[s.id] = batchValue.value
+  })
+  showBatchAssign.value = false
+  showSuccessToast(`已为${students.value.length}名学生设置相同值`)
 }
 
 // 键盘导航：Tab键切换学生
@@ -429,6 +510,30 @@ const onClassConfirm = ({ selectedOptions }: any) => {
   selectedClass.value = selected.text
   selectedClassId.value = selected.value
   showClassPicker.value = false
+  
+  // 更新科目和组别
+  const cls = classes.value.find(c => c.id === selectedClassId.value)
+  availableSubjects.value = cls?.subjects || ['语文', '数学', '英语']
+  selectedSubject.value = ''
+  selectedGroupId.value = ''
+  selectedGroupLabel.value = ''
+  
+  loadData()
+}
+
+// 科目确认
+const onSubjectConfirm = ({ selectedOptions }: any) => {
+  selectedSubject.value = selectedOptions[0].value
+  showSubjectPicker.value = false
+  loadData()
+}
+
+// 组别确认
+const onGroupConfirm = ({ selectedOptions }: any) => {
+  const selected = selectedOptions[0]
+  selectedGroupId.value = selected.value
+  selectedGroupLabel.value = selected.text
+  showGroupPicker.value = false
   loadData()
 }
 

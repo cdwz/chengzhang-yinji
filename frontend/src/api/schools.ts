@@ -50,5 +50,15 @@ export function getClass(id: string) {
   return http.get<Class>(`/schools/classes/${id}`)
 }
 
+// 修改班级
+export function updateClass(id: string, data: { name?: string; grade_id?: string }) {
+  return http.put<Class>(`/schools/classes/${id}`, data)
+}
+
+// 删除班级
+export function deleteClass(id: string) {
+  return http.delete<{ message: string }>(`/schools/classes/${id}`)
+}
+
 // 别名
 export const getClassDetail = getClass

@@ -5,7 +5,15 @@ import type { Task, TaskSubmission, MessageResponse } from './types'
 // ==================== 任务 ====================
 
 // 获取任务列表
-export function getTasks(params?: { class_id?: string; task_date?: string; student_id?: string }) {
+export function getTasks(params?: {
+  class_id?: string
+  subject?: string
+  group_id?: string
+  task_date?: string
+  date_from?: string
+  date_to?: string
+  student_id?: string
+}) {
   return http.get<Task[]>('/tasks', params)
 }
 
@@ -23,6 +31,8 @@ export function createTask(data: {
   suggested_duration?: number
   task_date: string
   group_id?: string
+  target_type?: string
+  target_ids?: string[]
 }) {
   return http.post<Task>('/tasks', data)
 }
@@ -70,7 +80,41 @@ export interface TaskStats {
   }>
 }
 
-// 获取任务统计（教师端）
+// 获取任务统计（教师端 - 旧接口，兼容）
 export function getTaskStats(classId?: string) {
   return http.get<TaskStats>('/tasks/stats', classId ? { class_id: classId } : {})
+}
+
+// 获取任务统计详情（教师端 - 新接口）
+export interface TaskStatsDetail {
+  total: number
+  weekCount: number
+  avgCompletionRate: number
+  unsubmittedCount: number
+  bySubject: Array<{
+    subject: string
+    count: number
+    completionRate: number
+  }>
+  byGroup: Array<{
+    name: string
+    count: number
+    completionRate: number
+  }>
+  trend: Array<{
+    date: string
+    label: string
+    count: number
+    submissions: number
+    percentage: number
+  }>
+}
+
+export function getTaskStatsDetail(params: {
+  class_id: string
+  period?: 'yesterday' | 'week' | 'month' | 'all'
+  subject?: string
+  group_id?: string
+}) {
+  return http.get<TaskStatsDetail>('/tasks/stats/detail', params)
 }

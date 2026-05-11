@@ -116,27 +116,30 @@ async def create_class(
     new_class = ClassModel(
         grade_id=class_data.grade_id,
         name=class_data.name,
-        invite_code=invite_code
+        invite_code=invite_code,
+        subjects=["语文", "数学", "英语"]  # 预置三科
     )
 
     db.add(new_class)
     await db.flush()  # 获取class_id
 
-    # 自动生成六列默认评价维度
+    # 自动生成六列默认评价维度（按需求规格）
     default_dimensions = [
-        {"name": "课堂表现", "type": "star", "sort_order": 1},
-        {"name": "作业完成", "type": "star", "sort_order": 2},
-        {"name": "积极发言", "type": "star", "sort_order": 3},
-        {"name": "小组协作", "type": "star", "sort_order": 4},
-        {"name": "书写工整", "type": "star", "sort_order": 5},
-        {"name": "特殊表扬", "type": "text", "sort_order": 6},
+        {"name": "数学课堂定时", "subject": "数学", "type": "star", "sort_order": 1, "config": {}},
+        {"name": "数学作业改错", "subject": "数学", "type": "grade", "sort_order": 2, "config": {}},
+        {"name": "数学定时改错", "subject": "数学", "type": "ab_score", "sort_order": 3, "config": {"total": 150, "a_score": 100, "b_score": 50}},
+        {"name": "语文作业与课堂情况", "subject": "语文", "type": "grade", "sort_order": 4, "config": {}},
+        {"name": "英语作业改错", "subject": "英语", "type": "grade", "sort_order": 5, "config": {}},
+        {"name": "英语课堂情况", "subject": "英语", "type": "grade", "sort_order": 6, "config": {}},
     ]
 
     for dim_data in default_dimensions:
         dimension = EvaluationDimension(
             class_id=new_class.id,
             name=dim_data["name"],
+            subject=dim_data.get("subject"),
             type=dim_data["type"],
+            config=dim_data.get("config", {}),
             sort_order=dim_data["sort_order"],
         )
         db.add(dimension)
@@ -157,7 +160,8 @@ async def create_class(
         name=new_class.name,
         invite_code=new_class.invite_code,
         grade=GradeResponse.model_validate(new_class.grade),
-        student_count=0
+        student_count=0,
+        subjects=new_class.subjects or ["语文", "数学", "英语"]
     )
 
 
@@ -194,7 +198,8 @@ async def list_classes(
             name=cls.name,
             invite_code=cls.invite_code,
             grade=GradeResponse.model_validate(cls.grade),
-            student_count=count
+            student_count=count,
+            subjects=cls.subjects or ["语文", "数学", "英语"]
         ))
     
     return response
@@ -232,8 +237,211 @@ async def get_class(
         name=cls.name,
         invite_code=cls.invite_code,
         grade=GradeResponse.model_validate(cls.grade),
-        student_count=count
+        student_count=count,
+        subjects=cls.subjects or ["语文", "数学", "英语"]
     )
+
+
+@router.put("/classes/{class_id}", response_model=ClassResponse)
+async def update_class(
+    class_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    """修改班级名称"""
+    from app.models import Class as ClassModel, Student
+    from pydantic import BaseModel as PydanticModel
+
+    class ClassUpdate(PydanticModel):
+        name: str | None = None
+        grade_id: str | None = None
+        subjects: List[str] | None = None
+
+    update_data = ClassUpdate(**body)
+
+    result = await db.execute(
+        select(ClassModel).where(ClassModel.id == class_id)
+    )
+    cls = result.scalar_one_or_none()
+
+    if not cls:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="班级不存在"
+        )
+
+    if update_data.name is not None:
+        cls.name = update_data.name
+    if update_data.grade_id is not None:
+        cls.grade_id = update_data.grade_id
+    if update_data.subjects is not None:
+        cls.subjects = update_data.subjects
+    await db.commit()
+    await db.refresh(cls)
+
+    # 重新加载关联
+    result = await db.execute(
+        select(ClassModel)
+        .options(selectinload(ClassModel.grade))
+        .where(ClassModel.id == class_id)
+    )
+    cls = result.scalar_one()
+
+    count_result = await db.execute(
+        select(func.count()).where(Student.class_id == class_id)
+    )
+    count = count_result.scalar() or 0
+
+    return ClassResponse(
+        id=cls.id,
+        name=cls.name,
+        invite_code=cls.invite_code,
+        grade=GradeResponse.model_validate(cls.grade),
+        student_count=count,
+        subjects=cls.subjects or ["语文", "数学", "英语"]
+    )
+
+
+@router.delete("/classes/{class_id}")
+async def delete_class(
+    class_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """删除班级（级联删除关联数据）"""
+    from app.models import (
+        Class as ClassModel, Student, TaskSubmission, LearningTask,
+        EvaluationRecord, EvaluationDimension, StudyGroup, TeachingAssignment,
+        TeacherAnnotation, SubmissionImage
+    )
+
+    result = await db.execute(
+        select(ClassModel).where(ClassModel.id == class_id)
+    )
+    cls = result.scalar_one_or_none()
+
+    if not cls:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="班级不存在"
+        )
+
+    # 查找该班级所有学生
+    student_result = await db.execute(
+        select(Student.id).where(Student.class_id == class_id)
+    )
+    student_ids = [row[0] for row in student_result.all()]
+
+    # 查找该班级所有任务
+    task_result = await db.execute(
+        select(LearningTask.id).where(LearningTask.class_id == class_id)
+    )
+    task_ids = [row[0] for row in task_result.all()]
+
+    # 按依赖顺序删除关联数据
+    # 1. 批注（关联提交图片）
+    if task_ids:
+        sub_result = await db.execute(
+            select(TaskSubmission.id).where(TaskSubmission.task_id.in_(task_ids))
+        )
+        submission_ids = [row[0] for row in sub_result.all()]
+
+        if submission_ids:
+            # 删除批注
+            img_result = await db.execute(
+                select(SubmissionImage.id).where(SubmissionImage.submission_id.in_(submission_ids))
+            )
+            image_ids = [row[0] for row in img_result.all()]
+            if image_ids:
+                await db.execute(
+                    TeacherAnnotation.__table__.delete().where(
+                        TeacherAnnotation.image_id.in_(image_ids)
+                    )
+                )
+                await db.execute(
+                    SubmissionImage.__table__.delete().where(
+                        SubmissionImage.id.in_(image_ids)
+                    )
+                )
+            await db.execute(
+                TaskSubmission.__table__.delete().where(
+                    TaskSubmission.task_id.in_(task_ids)
+                )
+            )
+
+    # 2. 学习任务
+    if task_ids:
+        await db.execute(
+            LearningTask.__table__.delete().where(LearningTask.class_id == class_id)
+        )
+
+    # 3. 评价记录 & 维度 & 成就 & 访问日志
+    if student_ids:
+        await db.execute(
+            EvaluationRecord.__table__.delete().where(
+                EvaluationRecord.student_id.in_(student_ids)
+            )
+        )
+        # 删除成就记录
+        from app.models import Achievement
+        await db.execute(
+            Achievement.__table__.delete().where(
+                Achievement.student_id.in_(student_ids)
+            )
+        )
+        # 删除访问日志
+        from app.models import AccessLog
+        await db.execute(
+            AccessLog.__table__.delete().where(
+                AccessLog.target_student_id.in_(student_ids)
+            )
+        )
+    await db.execute(
+        EvaluationDimension.__table__.delete().where(EvaluationDimension.class_id == class_id)
+    )
+
+    # 4. 删除学生-小组关联，清除 study_group_id 引用，再删除学习小组
+    if student_ids:
+        await db.execute(
+            Student.__table__.update()
+            .where(Student.id.in_(student_ids))
+            .values(study_group_id=None)
+        )
+    # 删除 student_groups 关联表（该班级的学生关联的小组记录）
+    from app.models import StudentGroup
+    if student_ids:
+        await db.execute(
+            StudentGroup.__table__.delete().where(
+                StudentGroup.student_id.in_(student_ids)
+            )
+        )
+    await db.execute(
+        StudyGroup.__table__.delete().where(StudyGroup.class_id == class_id)
+    )
+
+    # 5. 教学分配
+    await db.execute(
+        TeachingAssignment.__table__.delete().where(
+            TeachingAssignment.class_id == class_id
+        )
+    )
+
+    # 6. 家长-学生关系 & 学生
+    if student_ids:
+        from app.models import ParentStudent
+        await db.execute(
+            ParentStudent.__table__.delete().where(
+                ParentStudent.student_id.in_(student_ids)
+            )
+        )
+        await db.execute(
+            Student.__table__.delete().where(Student.class_id == class_id)
+        )
+
+    # 7. 删除班级
+    await db.delete(cls)
+    await db.commit()
+
+    return {"message": "班级及关联数据已删除"}
 
 
 # ==================== 动态路由（放在静态路由后面）====================

@@ -35,8 +35,7 @@
                 v-for="student in students"
                 :key="student.id"
                 :title="student.name"
-                :label="`学号: ${student.student_number || '未设置'}`"
-                is-link
+                :label="`学号: ${student.student_number || '未设置'}${student.status && student.status !== 'active' ? ' · ' + statusName(student.status) : ''}`"
               >
                 <template #icon>
                   <van-icon
@@ -47,9 +46,13 @@
                   />
                 </template>
                 <template #value>
-                  <van-tag v-if="student.study_group_id" type="primary">
-                    {{ getGroupName(student.study_group_id) }}
-                  </van-tag>
+                  <div class="student-actions">
+                    <van-tag v-if="student.study_group_id" type="primary" style="margin-right:4px">
+                      {{ getGroupName(student.study_group_id) }}
+                    </van-tag>
+                    <van-icon name="edit" size="18" color="#3e7dc9" @click.stop="openEditStudent(student)" />
+                    <van-icon name="delete-o" size="18" color="#ee0a24" style="margin-left:8px" @click.stop="confirmDeleteStudent(student)" />
+                  </div>
                 </template>
               </van-cell>
             </van-list>
@@ -161,16 +164,42 @@
         </div>
       </div>
     </van-action-sheet>
+
+    <!-- 编辑学生弹窗 -->
+    <van-dialog v-model:show="showEditStudent" title="编辑学生" show-cancel-button @confirm="saveEditStudent" :before-close="beforeEditClose">
+      <div style="padding: 16px">
+        <van-field v-model="editForm.name" label="姓名" placeholder="输入姓名" required />
+        <van-field v-model="editForm.student_number" label="学号" placeholder="输入学号" />
+        <van-field v-model="editForm.status" is-link readonly label="状态" placeholder="选择状态" @click="showStatusPicker = true" />
+        <van-field v-model="editForm.study_group_name" is-link readonly label="学习小组" placeholder="选择小组" @click="showGroupPicker = true" />
+        <!-- 转班目标选择 -->
+        <van-field v-if="editForm.status === 'transfer'" is-link readonly label="目标班级" placeholder="选择目标班级" @click="showTransferPicker = true" :value="transferClassName" />
+      </div>
+    </van-dialog>
+
+    <!-- 状态选择器 -->
+    <van-popup v-model:show="showStatusPicker" position="bottom" round>
+      <van-picker :columns="statusOptions" @confirm="onStatusConfirm" @cancel="showStatusPicker = false" />
+    </van-popup>
+
+    <!-- 小组选择器 -->
+    <van-popup v-model:show="showGroupPicker" position="bottom" round>
+      <van-picker :columns="groupOptions" @confirm="onGroupConfirm" @cancel="showGroupPicker = false" />
+    </van-popup>
+
+    <!-- 转班选择器 -->
+    <van-popup v-model:show="showTransferPicker" position="bottom" round>
+      <van-picker :columns="classOptions" @confirm="onTransferConfirm" @cancel="showTransferPicker = false" />
+    </van-popup>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { showSuccessToast, showFailToast } from 'vant'
-import { getClassDetail } from '@/api/schools'
-import { getStudents, importStudents } from '@/api/students'
-import { getStudyGroups, createStudyGroup, addStudentToGroup, removeStudentFromGroup } from '@/api/students'
+import { showSuccessToast, showFailToast, showToast, showConfirmDialog } from 'vant'
+import { getClassDetail, getClasses } from '@/api/schools'
+import { getStudents, importStudents, updateStudent, deleteStudent, transferStudent, getStudyGroups, createStudyGroup, addStudentToGroup, removeStudentFromGroup } from '@/api/students'
 import type { ClassResponse } from '@/api/schools'
 import type { Student, StudyGroup } from '@/api/types'
 
@@ -346,11 +375,125 @@ const confirmAddStudent = async () => {
   }
 }
 
+// ============ 学生编辑/删除 ============
+
+const showEditStudent = ref(false)
+const showStatusPicker = ref(false)
+const showGroupPicker = ref(false)
+const showTransferPicker = ref(false)
+const transferClassId = ref('')
+const transferClassName = ref('')
+
+const editForm = reactive({
+  id: '',
+  name: '',
+  student_number: '',
+  status: 'active',
+  study_group_id: '',
+  study_group_name: '',
+})
+
+const statusMap: Record<string, string> = { active: '在读', leave: '请假', transfer: '转班', leave_school: '离校' }
+const statusName = (s: string) => statusMap[s] || s
+
+const statusOptions = Object.entries(statusMap).map(([v, t]) => ({ text: t, value: v }))
+const groupOptions = computed(() => [
+  { text: '无小组', value: '' },
+  ...groups.value.map(g => ({ text: g.name, value: g.id }))
+])
+const classOptions = ref<Array<{ text: string; value: string }>>([])
+
+function openEditStudent(student: any) {
+  editForm.id = student.id
+  editForm.name = student.name
+  editForm.student_number = student.student_number || ''
+  editForm.status = student.status || 'active'
+  editForm.study_group_id = student.study_group_id || ''
+  editForm.study_group_name = getGroupName(student.study_group_id) || '无小组'
+  transferClassId.value = ''
+  transferClassName.value = ''
+  showEditStudent.value = true
+}
+
+function onStatusConfirm({ selectedOptions }: any) {
+  editForm.status = selectedOptions[0].value
+  editForm.study_group_name = statusMap[editForm.status] || editForm.status
+  showStatusPicker.value = false
+}
+
+function onGroupConfirm({ selectedOptions }: any) {
+  editForm.study_group_id = selectedOptions[0].value
+  editForm.study_group_name = selectedOptions[0].text
+  showGroupPicker.value = false
+}
+
+async function onTransferConfirm({ selectedOptions }: any) {
+  transferClassId.value = selectedOptions[0].value
+  transferClassName.value = selectedOptions[0].text
+  showTransferPicker.value = false
+}
+
+function beforeEditClose(action: string, done: () => void) {
+  if (action === 'confirm') {
+    saveEditStudent().then(done).catch(() => {})
+  } else {
+    done()
+  }
+}
+
+async function saveEditStudent() {
+  try {
+    if (editForm.status === 'transfer' && transferClassId.value) {
+      await transferStudent(editForm.id, transferClassId.value)
+      showToast('转班成功')
+    } else {
+      await updateStudent(editForm.id, {
+        name: editForm.name,
+        student_number: editForm.student_number || undefined,
+        study_group_id: editForm.study_group_id || undefined,
+        status: editForm.status
+      })
+      showToast('保存成功')
+    }
+    loadStudents()
+  } catch (e: any) {
+    showToast(e?.message || '保存失败')
+    throw e
+  }
+}
+
+async function confirmDeleteStudent(student: any) {
+  try {
+    await showConfirmDialog({
+      title: '删除学生',
+      message: `删除「${student.name}」后，该学生的所有数据（任务提交、评价记录等）将无法恢复。确认删除？`,
+      confirmButtonText: '确认删除',
+      confirmButtonColor: '#ee0a24'
+    })
+    await deleteStudent(student.id)
+    showToast('已删除')
+    loadStudents()
+  } catch (e: any) {
+    if (e !== 'confirm') showToast(e?.message || '删除失败')
+  }
+}
+
+// 加载班级列表（用于转班选择）
+async function loadClassOptions() {
+  try {
+    const data = await getClasses()
+    classOptions.value = data
+      .filter((c: any) => c.id !== route.params.id)
+      .map((c: any) => ({ text: c.name, value: c.id }))
+  } catch {}
+}
+
 // 初始化
 onMounted(async () => {
   await loadClassInfo()
   await loadStudents()
   await loadGroups()
+  await loadClassOptions()
 })
 </script>
 
@@ -396,6 +539,11 @@ onMounted(async () => {
   padding: 12px;
   max-height: 50vh;
   overflow-y: auto;
+}
+
+.student-actions {
+  display: flex;
+  align-items: center;
 }
 
 .action-buttons {

@@ -1,112 +1,107 @@
 <template>
-  <div class="dimension-settings">
+  <div class="dimensions-page">
     <el-card>
       <template #header>
         <div class="card-header">
-          <span>评价维度设置</span>
-          <el-button type="primary" @click="showAddDialog = true">
+          <span>评价维度管理</span>
+          <el-button type="primary" @click="openCreateDialog">
             <el-icon><Plus /></el-icon> 添加维度
           </el-button>
         </div>
       </template>
-      
-      <el-alert type="info" :closable="false" style="margin-bottom: 16px">
-        系统已为班级创建6个默认评价维度，您可以根据需要添加、修改或禁用维度。
-      </el-alert>
-      
-      <el-table :data="dimensions" v-loading="loading" row-key="id">
-        <el-table-column prop="sort_order" label="排序" width="80">
-          <template #default>
-            <el-icon class="drag-handle" style="cursor: move"><Rank /></el-icon>
-          </template>
-        </el-table-column>
-        
-        <el-table-column prop="name" label="维度名称" min-width="150" />
-        
-        <el-table-column prop="type" label="类型" width="120">
-          <template #default="{ row }">
-            <el-tag :type="getTypeTagType(row.type)">
-              {{ getTypeName(row.type) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        
-        <el-table-column prop="subject" label="适用科目" width="120">
-          <template #default="{ row }">
-            <span v-if="row.subject">{{ row.subject }}</span>
-            <span v-else style="color: #999">通用</span>
-          </template>
-        </el-table-column>
-        
-        <el-table-column prop="is_active" label="状态" width="100">
-          <template #default="{ row }">
-            <el-switch 
-              v-model="row.is_active" 
-              @change="handleStatusChange(row)"
-              :loading="row.statusLoading"
-            />
-          </template>
-        </el-table-column>
-        
-        <el-table-column label="操作" width="150" fixed="right">
-          <template #default="{ row }">
-            <el-button link type="primary" @click="editDimension(row)">编辑</el-button>
-            <el-button link type="danger" @click="deleteDimension(row)">删除</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+
+      <draggable
+        v-model="dimensions"
+        item-key="id"
+        handle=".drag-handle"
+        @end="onDragEnd"
+        class="dimensions-list"
+      >
+        <template #item="{ element: dim }">
+          <el-table :data="[dim]" style="margin-bottom: 8px">
+            <el-table-column width="40">
+              <template #default>
+                <el-icon class="drag-handle" style="cursor: move; color: #909399"><Rank /></el-icon>
+              </template>
+            </el-table-column>
+            <el-table-column prop="sort_order" label="序号" width="60" />
+            <el-table-column prop="name" label="维度名称" />
+            <el-table-column prop="subject" label="科目" width="100">
+              <template #default="{ row }">{{ row.subject || '-' }}</template>
+            </el-table-column>
+            <el-table-column prop="type" label="类型" width="120">
+              <template #default="{ row }">
+                <el-tag :type="typeTagMap[row.type] || 'info'" size="small">{{ typeNameMap[row.type] || row.type }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="配置" width="160">
+              <template #default="{ row }">
+                <span v-if="row.type === 'score'">{{ row.config?.score_type === 'custom' ? `自定义${row.config.max_score}分` : `${row.config?.score_type || 100}分制` }}</span>
+                <span v-else-if="row.type === 'ab_score'">A{{ row.config?.a_score ?? 100 }}/B{{ row.config?.b_score ?? 50 }}/总{{ row.config?.total ?? 150 }}</span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column prop="is_active" label="状态" width="80">
+              <template #default="{ row }">
+                <el-tag :type="row.is_active ? 'success' : 'info'" size="small">{{ row.is_active ? '启用' : '停用' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="操作" width="180">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openEditDialog(row)">编辑</el-button>
+                <el-button link :type="row.is_active ? 'warning' : 'success'" @click="toggleActive(row)">{{ row.is_active ? '停用' : '启用' }}</el-button>
+                <el-button link type="danger" @click="confirmDelete(row)">删除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </template>
+      </draggable>
     </el-card>
-    
-    <!-- 添加/编辑维度对话框 -->
-    <el-dialog 
-      v-model="showAddDialog" 
-      :title="editingDimension ? '编辑维度' : '添加维度'"
-      width="500px"
-    >
-      <el-form :model="form" :rules="rules" ref="formRef" label-width="100px">
-        <el-form-item label="维度名称" prop="name">
-          <el-input v-model="form.name" placeholder="请输入维度名称" maxlength="100" />
+
+    <!-- 创建/编辑对话框 -->
+    <el-dialog v-model="showDialog" :title="editingId ? '编辑维度' : '添加维度'" width="520px">
+      <el-form :model="form" label-width="90px">
+        <el-form-item label="维度名称" required>
+          <el-input v-model="form.name" placeholder="如：数学课堂定时" />
         </el-form-item>
-        
-        <el-form-item label="评价类型" prop="type">
-          <el-select v-model="form.type" placeholder="请选择评价类型" style="width: 100%">
-            <el-option label="星级评价" value="star" />
-            <el-option label="等级评价" value="grade" />
-            <el-option label="是/否" value="boolean" />
-            <el-option label="分数" value="score" />
-            <el-option label="文字评语" value="text" />
+        <el-form-item label="科目">
+          <el-select v-model="form.subject" placeholder="选择科目" clearable style="width:100%">
+            <el-option v-for="sub in classSubjects" :key="sub" :label="sub" :value="sub" />
           </el-select>
         </el-form-item>
-        
-        <el-form-item label="适用科目">
-          <el-select v-model="form.subject" placeholder="通用" clearable style="width: 100%">
-            <el-option label="通用" value="" />
-            <el-option label="语文" value="语文" />
-            <el-option label="数学" value="数学" />
-            <el-option label="英语" value="英语" />
-            <el-option label="科学" value="科学" />
-            <el-option label="美术" value="美术" />
-            <el-option label="音乐" value="音乐" />
-            <el-option label="体育" value="体育" />
+        <el-form-item label="类型" required>
+          <el-select v-model="form.type" placeholder="选择类型" style="width:100%" :disabled="!!editingId" @change="onTypeChange">
+            <el-option v-for="t in typeOptions" :key="t.value" :label="t.label" :value="t.value" />
           </el-select>
         </el-form-item>
-        
-        <el-form-item label="类型说明">
-          <div class="type-desc">
-            <p><strong>星级评价：</strong>1-5颗星，适合日常行为评价</p>
-            <p><strong>等级评价：</strong>A/B/C/D等级，适合学业评价</p>
-            <p><strong>是/否：</strong>二元选择，适合达标类评价</p>
-            <p><strong>分数：</strong>0-100分，适合量化评价</p>
-            <p><strong>文字评语：</strong>自由文本，适合个性化评价</p>
-          </div>
+        <!-- score类型配置 -->
+        <el-form-item v-if="form.type === 'score'" label="分制">
+          <el-radio-group v-model="form.config.score_type" @change="onScoreTypeChange">
+            <el-radio value="10">10分制</el-radio>
+            <el-radio value="100">100分制</el-radio>
+            <el-radio value="custom">自定义</el-radio>
+          </el-radio-group>
+          <el-input-number v-if="form.config.score_type === 'custom'" v-model="form.config.max_score" :min="1" style="margin-left:12px" />
         </el-form-item>
+        <!-- ab_score类型配置 -->
+        <template v-if="form.type === 'ab_score'">
+          <el-form-item label="总分">
+            <el-input-number v-model="form.config.total" :min="1" />
+          </el-form-item>
+          <el-form-item label="A卷满分">
+            <el-input-number v-model="form.config.a_score" :min="0" />
+          </el-form-item>
+          <el-form-item label="B卷满分">
+            <el-input-number v-model="form.config.b_score" :min="0" />
+          </el-form-item>
+          <el-form-item label="">
+            <span style="color:#909399;font-size:12px">A卷 + B卷 = {{ (form.config.a_score || 0) + (form.config.b_score || 0) }}（需等于总分 {{ form.config.total }}）</span>
+          </el-form-item>
+        </template>
       </el-form>
-      
       <template #footer>
-        <el-button @click="showAddDialog = false">取消</el-button>
-        <el-button type="primary" @click="handleSubmit" :loading="submitting">
-          {{ editingDimension ? '保存' : '添加' }}
-        </el-button>
+        <el-button @click="showDialog = false">取消</el-button>
+        <el-button type="primary" @click="saveDimension" :loading="saving">确定</el-button>
       </template>
     </el-dialog>
   </div>
@@ -115,194 +110,189 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Rank } from '@element-plus/icons-vue'
-import { 
-  getDimensions, 
-  createDimension, 
-  updateDimension, 
-  deleteDimension as deleteDimensionApi 
-} from '@/api/dimensions'
-import type { EvaluationDimension, DimensionCreate, DimensionUpdate } from '@/api/dimensions'
+import draggable from 'vuedraggable'
+import { getDimensions, createDimension, updateDimension, deleteDimension, updateDimensionOrder } from '@/api/dimensions'
+import { getClass } from '@/api/schools'
+import type { EvaluationDimension } from '@/api/types'
 
 const route = useRoute()
-const classId = route.params.classId as string || route.params.id as string
+const classId = route.params.classId as string
 
 const loading = ref(false)
-const submitting = ref(false)
+const saving = ref(false)
 const dimensions = ref<EvaluationDimension[]>([])
-const showAddDialog = ref(false)
-const editingDimension = ref<EvaluationDimension | null>(null)
-const formRef = ref<FormInstance>()
+const classSubjects = ref<string[]>(['语文', '数学', '英语']) // 默认值
+const showDialog = ref(false)
+const editingId = ref('')
 
-const form = reactive<DimensionCreate & { subject?: string }>({
+const typeNameMap: Record<string, string> = {
+  star: '星级', grade: '等第', score: '分值', ab_score: 'A/B卷', boolean: '是否完成', text: '文本备注'
+}
+const typeTagMap: Record<string, string> = {
+  star: 'warning', grade: 'success', score: 'primary', ab_score: 'danger', boolean: 'info', text: 'info'
+}
+const typeOptions = [
+  { label: '⭐ 星级（1-5星）', value: 'star' },
+  { label: '📝 等第（A/B/C/D）', value: 'grade' },
+  { label: '🔢 分值', value: 'score' },
+  { label: '📄 A/B卷分值', value: 'ab_score' },
+  { label: '✅ 是否完成', value: 'boolean' },
+  { label: '💬 文本备注', value: 'text' },
+]
+
+const form = reactive({
   name: '',
-  type: 'star',
-  subject: ''
+  subject: '',
+  type: 'star' as string,
+  config: {} as Record<string, any>
 })
 
-const rules: FormRules = {
-  name: [
-    { required: true, message: '请输入维度名称', trigger: 'blur' },
-    { max: 100, message: '维度名称最多100个字符', trigger: 'blur' }
-  ],
-  type: [
-    { required: true, message: '请选择评价类型', trigger: 'change' }
-  ]
+function resetForm() {
+  form.name = ''
+  form.subject = ''
+  form.type = 'star'
+  form.config = {}
 }
 
-onMounted(() => {
-  loadDimensions()
-})
+function onTypeChange(type: string) {
+  if (type === 'score') {
+    form.config = { score_type: '100', max_score: 100 }
+  } else if (type === 'ab_score') {
+    form.config = { total: 150, a_score: 100, b_score: 50 }
+  } else {
+    form.config = {}
+  }
+}
+
+function onScoreTypeChange(val: string) {
+  if (val === '10') form.config.max_score = 10
+  else if (val === '100') form.config.max_score = 100
+}
+
+function openCreateDialog() {
+  editingId.value = ''
+  resetForm()
+  showDialog.value = true
+}
+
+function openEditDialog(dim: EvaluationDimension) {
+  editingId.value = dim.id
+  form.name = dim.name
+  form.subject = dim.subject || ''
+  form.type = dim.type
+  form.config = dim.config ? { ...dim.config } : {}
+  showDialog.value = true
+}
 
 async function loadDimensions() {
   loading.value = true
   try {
     dimensions.value = await getDimensions(classId)
-  } catch (error) {
-    console.error('加载维度失败', error)
-  } finally {
-    loading.value = false
-  }
+  } catch { ElMessage.error('加载失败') }
+  finally { loading.value = false }
 }
 
-function getTypeName(type: string) {
-  const typeMap: Record<string, string> = {
-    star: '星级',
-    grade: '等级',
-    boolean: '是/否',
-    score: '分数',
-    text: '文字'
-  }
-  return typeMap[type] || type
-}
-
-function getTypeTagType(type: string) {
-  const tagMap: Record<string, string> = {
-    star: 'warning',
-    grade: 'success',
-    boolean: 'info',
-    score: 'primary',
-    text: ''
-  }
-  return tagMap[type] || ''
-}
-
-function editDimension(dimension: EvaluationDimension) {
-  editingDimension.value = dimension
-  form.name = dimension.name
-  form.type = dimension.type
-  form.subject = dimension.subject || ''
-  showAddDialog.value = true
-}
-
-async function handleSubmit() {
-  if (!formRef.value) return
+async function saveDimension() {
+  if (!form.name.trim()) { ElMessage.warning('请输入维度名称'); return }
   
-  await formRef.value.validate(async (valid) => {
-    if (!valid) return
-    
-    submitting.value = true
-    try {
-      if (editingDimension.value) {
-        // 更新
-        const updateData: DimensionUpdate = {
-          name: form.name,
-          type: form.type,
-          subject: form.subject || undefined
-        }
-        await updateDimension(editingDimension.value.id, updateData)
-        ElMessage.success('更新成功')
-      } else {
-        // 创建
-        await createDimension(classId, {
-          name: form.name,
-          type: form.type,
-          subject: form.subject || undefined
-        })
-        ElMessage.success('添加成功')
-      }
-      
-      showAddDialog.value = false
-      resetForm()
-      loadDimensions()
-    } catch (error: any) {
-      ElMessage.error(error?.message || '操作失败')
-    } finally {
-      submitting.value = false
+  // ab_score校验
+  if (form.type === 'ab_score') {
+    const a = form.config.a_score || 0
+    const b = form.config.b_score || 0
+    if (a + b !== form.config.total) {
+      ElMessage.warning(`A卷${a} + B卷${b} ≠ 总分${form.config.total}`)
+      return
     }
-  })
-}
-
-async function handleStatusChange(dimension: EvaluationDimension & { statusLoading?: boolean }) {
-  dimension.statusLoading = true
-  try {
-    await updateDimension(dimension.id, { is_active: dimension.is_active })
-    ElMessage.success(dimension.is_active ? '已启用' : '已禁用')
-  } catch (error: any) {
-    dimension.is_active = !dimension.is_active // 恢复原状态
-    ElMessage.error(error?.message || '操作失败')
-  } finally {
-    dimension.statusLoading = false
   }
+  
+  saving.value = true
+  try {
+    if (editingId.value) {
+      await updateDimension(editingId.value, {
+        name: form.name,
+        subject: form.subject || undefined,
+        config: form.config
+      })
+      ElMessage.success('更新成功')
+    } else {
+      await createDimension(classId, {
+        name: form.name,
+        type: form.type as any,
+        subject: form.subject || undefined,
+        config: form.config
+      })
+      ElMessage.success('创建成功')
+    }
+    showDialog.value = false
+    loadDimensions()
+  } catch (e: any) {
+    ElMessage.error(e?.message || '操作失败')
+  } finally { saving.value = false }
 }
 
-async function deleteDimension(dimension: EvaluationDimension) {
+async function toggleActive(dim: EvaluationDimension) {
+  try {
+    await updateDimension(dim.id, { is_active: !dim.is_active })
+    ElMessage.success(dim.is_active ? '已停用' : '已启用')
+    loadDimensions()
+  } catch { ElMessage.error('操作失败') }
+}
+
+async function confirmDelete(dim: EvaluationDimension) {
   try {
     await ElMessageBox.confirm(
-      `确定要删除维度"${dimension.name}"吗？删除后无法恢复。`,
+      `删除「${dim.name}」后，该维度下所有评价记录也将被删除且无法恢复，确认删除？`,
       '删除确认',
-      { type: 'warning' }
+      { confirmButtonText: '确认删除', cancelButtonText: '取消', type: 'warning' }
     )
-    
-    await deleteDimensionApi(dimension.id)
-    ElMessage.success('删除成功')
+    await deleteDimension(dim.id)
+    ElMessage.success('已删除')
     loadDimensions()
-  } catch (error: any) {
-    if (error !== 'cancel') {
-      ElMessage.error(error?.message || '删除失败')
-    }
+  } catch (e: any) {
+    if (e !== 'cancel') ElMessage.error(e?.message || '删除失败')
   }
 }
 
-function resetForm() {
-  form.name = ''
-  form.type = 'star'
-  form.subject = ''
-  editingDimension.value = null
-  formRef.value?.resetFields()
+async function onDragEnd() {
+  // 更新排序
+  const orderData = dimensions.value.map((dim, index) => ({
+    id: dim.id,
+    sort_order: index + 1
+  }))
+  
+  try {
+    await updateDimensionOrder(orderData)
+    // 更新本地排序
+    dimensions.value = dimensions.value.map((dim, index) => ({
+      ...dim,
+      sort_order: index + 1
+    }))
+    ElMessage.success('排序已保存')
+  } catch (error) {
+    ElMessage.error('排序保存失败')
+    // 重新加载以恢复原始顺序
+    loadDimensions()
+  }
 }
+
+async function loadClassSubjects() {
+  try {
+    const cls = await getClass(classId)
+    classSubjects.value = cls.subjects || ['语文', '数学', '英语']
+  } catch (error) {
+    console.error('加载班级科目失败', error)
+    classSubjects.value = ['语文', '数学', '英语']
+  }
+}
+
+onMounted(async () => {
+  await loadClassSubjects()
+  await loadDimensions()
+})
 </script>
 
-<style scoped lang="scss">
-.dimension-settings {
-  .card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  
-  .drag-handle {
-    color: #999;
-    cursor: move;
-    
-    &:hover {
-      color: #409eff;
-    }
-  }
-  
-  .type-desc {
-    font-size: 12px;
-    color: #666;
-    line-height: 1.8;
-    
-    p {
-      margin: 0;
-    }
-    
-    strong {
-      color: #333;
-    }
-  }
-}
+<style scoped>
+.card-header { display: flex; justify-content: space-between; align-items: center; }
 </style>
