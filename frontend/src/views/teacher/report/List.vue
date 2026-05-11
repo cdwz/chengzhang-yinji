@@ -85,13 +85,13 @@
         v-for="subject in subjectStats"
         :key="subject.name"
         :title="subject.name"
-        :label="`完成率: ${subject.completionRate}%`"
+        :label="`完成率: ${subject.completion_rate}%`"
       >
         <template #value>
           <div class="subject-stats">
-            <span>{{ subject.taskCount }}个任务</span>
+            <span>{{ subject.task_count }}个任务</span>
             <van-progress
-              :percentage="subject.completionRate"
+              :percentage="subject.completion_rate"
               :stroke-width="6"
               color="#3e7dc9"
             />
@@ -107,7 +107,7 @@
         v-for="(student, index) in studentRanking"
         :key="student.id"
         :title="student.name"
-        :label="`完成任务: ${student.taskCount}个`"
+        :label="`完成任务: ${student.task_count}个`"
       >
         <template #icon>
           <van-tag :type="getRankType(index)" size="medium">
@@ -150,9 +150,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { showSuccessToast, showFailToast } from 'vant'
 import { getClasses } from '@/api/schools'
+import { getClassReport, exportClassPdf } from '@/api/reports'
 import type { Class } from '@/api/types'
 
 // 状态
@@ -160,53 +161,31 @@ const classes = ref<Class[]>([])
 const selectedClass = ref('')
 const selectedClassId = ref('')
 const selectedPeriod = ref('本周')
+const selectedPeriodValue = ref<'week' | 'month' | 'semester'>('week')
 const showClassPicker = ref(false)
 const showPeriodPicker = ref(false)
 const chartType = ref('task')
+const loading = ref(false)
 
 // 总览数据
 const overview = reactive({
-  totalStudents: 42,
-  activeStudents: 38,
-  taskCompletion: 78,
-  avgDuration: 25
+  totalStudents: 0,
+  activeStudents: 0,
+  taskCompletion: 0,
+  avgDuration: 0
 })
 
 // 趋势数据
-const trendData = ref([
-  { label: '周一', count: 35, percentage: 70 },
-  { label: '周二', count: 42, percentage: 84 },
-  { label: '周三', count: 38, percentage: 76 },
-  { label: '周四', count: 45, percentage: 90 },
-  { label: '周五', count: 40, percentage: 80 },
-  { label: '周六', count: 25, percentage: 50 },
-  { label: '周日', count: 20, percentage: 40 }
-])
+const trendData = ref<Array<{ label: string; count: number; percentage: number }>>([])
 
 // 评价分布
-const evaluationDistribution = ref([
-  { level: '优秀', count: 12, percentage: 28, color: '#07c160' },
-  { level: '良好', count: 18, percentage: 43, color: '#3e7dc9' },
-  { level: '一般', count: 10, percentage: 24, color: '#ff976a' },
-  { level: '待提高', count: 2, percentage: 5, color: '#ee0a24' }
-])
+const evaluationDistribution = ref<Array<{ level: string; count: number; percentage: number; color: string }>>([])
 
 // 科目统计
-const subjectStats = ref([
-  { name: '语文', taskCount: 8, completionRate: 82 },
-  { name: '数学', taskCount: 6, completionRate: 75 },
-  { name: '英语', taskCount: 5, completionRate: 70 },
-  { name: '科学', taskCount: 5, completionRate: 68 }
-])
+const subjectStats = ref<Array<{ name: string; task_count: number; completion_rate: number }>>([])
 
 // 学生排行
-const studentRanking = ref([
-  { id: '1', name: '张三', taskCount: 24, rating: 5 },
-  { id: '2', name: '李四', taskCount: 22, rating: 5 },
-  { id: '3', name: '王五', taskCount: 20, rating: 4 },
-  { id: '4', name: '赵六', taskCount: 18, rating: 4 },
-  { id: '5', name: '钱七', taskCount: 16, rating: 4 }
-])
+const studentRanking = ref<Array<{ id: string; name: string; task_count: number; rating: number }>>([])
 
 // 班级选择器列
 const classColumns = computed(() => {
@@ -239,16 +218,66 @@ const loadClasses = async () => {
       const first = classes.value[0]
       selectedClass.value = first.name
       selectedClassId.value = first.id
+      loadReportData()
     }
   } catch (error) {
     showFailToast('加载班级失败')
   }
 }
 
+// 加载报告数据
+const loadReportData = async () => {
+  if (!selectedClassId.value) return
+  
+  loading.value = true
+  try {
+    const data = await getClassReport({
+      class_id: selectedClassId.value,
+      period: selectedPeriodValue.value
+    })
+    
+    // 更新数据
+    overview.totalStudents = data.overview.total_students
+    overview.activeStudents = data.overview.active_students
+    overview.taskCompletion = data.overview.task_completion
+    overview.avgDuration = data.overview.avg_duration
+    
+    trendData.value = data.trend
+    evaluationDistribution.value = data.distribution
+    subjectStats.value = data.subjects
+    studentRanking.value = data.ranking
+  } catch (error) {
+    showFailToast('加载报告失败')
+  } finally {
+    loading.value = false
+  }
+}
+
 // 导出报告
 const exportReport = async () => {
-  showSuccessToast('报告生成中...')
-  // TODO: 调用后端API生成报告
+  if (!selectedClassId.value) {
+    showFailToast('请选择班级')
+    return
+  }
+  
+  try {
+    const blob = await exportClassPdf({
+      class_id: selectedClassId.value,
+      period: selectedPeriodValue.value
+    })
+    
+    // 下载文件
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${selectedClass.value}-${selectedPeriod.value}报告.pdf`
+    a.click()
+    URL.revokeObjectURL(url)
+    
+    showSuccessToast('导出成功')
+  } catch (error) {
+    showFailToast('导出失败')
+  }
 }
 
 // 班级确认
@@ -257,16 +286,24 @@ const onClassConfirm = ({ selectedOptions }: any) => {
   selectedClass.value = selected.text
   selectedClassId.value = selected.value
   showClassPicker.value = false
-  // TODO: 重新加载数据
+  loadReportData()
 }
 
 // 时间范围确认
 const onPeriodConfirm = ({ selectedOptions }: any) => {
   const selected = selectedOptions[0]
   selectedPeriod.value = selected.text
+  selectedPeriodValue.value = selected.value
   showPeriodPicker.value = false
-  // TODO: 重新加载数据
+  loadReportData()
 }
+
+// 监听班级和周期变化
+watch([selectedClassId, selectedPeriodValue], () => {
+  if (selectedClassId.value) {
+    loadReportData()
+  }
+})
 
 // 初始化
 onMounted(() => {

@@ -49,10 +49,14 @@
         
         <!-- 表体 -->
         <div
-          v-for="student in students"
+          v-for="(student, index) in students"
           :key="student.id"
+          :ref="el => { if (el) rowRefs[index] = el as HTMLElement }"
           class="grid-row"
-          :class="{ 'has-value': evaluations[student.id] }"
+          :class="{ 'has-value': evaluations[student.id], 'focused': focusedIndex === index }"
+          tabindex="0"
+          @keydown="handleKeyDown($event, index)"
+          @focus="focusedIndex = index"
         >
           <div class="grid-cell student-cell">
             <span class="student-name">{{ student.name }}</span>
@@ -82,8 +86,11 @@
         </div>
       </van-cell-group>
       
-      <!-- 批量保存 -->
+      <!-- 批量操作 -->
       <div class="batch-actions">
+        <van-button type="default" :loading="copying" @click="copyFromYesterday" style="margin-bottom: 12px">
+          <van-icon name="description" /> 复制前一天数据
+        </van-button>
         <van-button type="primary" block :loading="saving" @click="saveAll">
           批量保存评价
         </van-button>
@@ -142,6 +149,11 @@ const students = ref<Student[]>([])
 const dimensions = ref<EvaluationDimension[]>([])
 const evaluations = reactive<Record<string, any>>({})
 const saving = ref(false)
+const copying = ref(false)
+
+// 键盘导航
+const rowRefs = ref<HTMLElement[]>([])
+const focusedIndex = ref(-1)
 
 // 选择
 const selectedDate = ref(new Date().toISOString().split('T')[0])
@@ -330,6 +342,77 @@ const applyTemplate = (tpl: string) => {
         evaluations[s.id] = tpl
       }
     })
+  }
+}
+
+// 键盘导航：Tab键切换学生
+const handleKeyDown = (event: KeyboardEvent, index: number) => {
+  if (event.key === 'Tab' && !event.shiftKey) {
+    event.preventDefault()
+    const nextIndex = index + 1
+    if (nextIndex < students.value.length) {
+      focusedIndex.value = nextIndex
+      rowRefs.value[nextIndex]?.focus()
+    }
+  } else if (event.key === 'Tab' && event.shiftKey) {
+    event.preventDefault()
+    const prevIndex = index - 1
+    if (prevIndex >= 0) {
+      focusedIndex.value = prevIndex
+      rowRefs.value[prevIndex]?.focus()
+    }
+  } else if (event.key === 'Enter') {
+    // Enter保存当前学生
+    const student = students.value[index]
+    if (evaluations[student.id]) {
+      saveSingle(student.id)
+      // 自动跳转到下一个
+      const nextIndex = index + 1
+      if (nextIndex < students.value.length) {
+        focusedIndex.value = nextIndex
+        rowRefs.value[nextIndex]?.focus()
+      }
+    }
+  }
+}
+
+// 复制前一天数据
+const copyFromYesterday = async () => {
+  if (!selectedClassId.value || !selectedDimensionId.value) return
+  
+  // 计算前一天日期
+  const date = new Date(selectedDate.value)
+  date.setDate(date.getDate() - 1)
+  const yesterday = date.toISOString().split('T')[0]
+  
+  copying.value = true
+  try {
+    const res = await getEvaluations({
+      class_id: selectedClassId.value,
+      dimension_id: selectedDimensionId.value,
+      start_date: yesterday,
+      end_date: yesterday
+    })
+    
+    if (res.length === 0) {
+      showFailToast('前一天没有评价数据')
+      return
+    }
+    
+    // 复制数据（仅覆盖未填写的）
+    let copied = 0
+    res.forEach((e: any) => {
+      if (!evaluations[e.student_id]) {
+        evaluations[e.student_id] = e.value
+        copied++
+      }
+    })
+    
+    showSuccessToast(`已复制${copied}条评价`)
+  } catch (error) {
+    showFailToast('复制失败')
+  } finally {
+    copying.value = false
   }
 }
 

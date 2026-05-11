@@ -45,6 +45,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '班级详情' }
       },
       {
+        path: 'classes/:classId/groups',
+        name: 'StudyGroups',
+        component: () => import('@/views/teacher/class/StudyGroups.vue'),
+        meta: { title: '学习小组管理' }
+      },
+      {
+        path: 'classes/:classId/dimensions',
+        name: 'EvaluationDimensions',
+        component: () => import('@/views/teacher/class/Dimensions.vue'),
+        meta: { title: '评价维度设置' }
+      },
+      {
         path: 'tasks',
         name: 'TeacherTasks',
         component: () => import('@/views/teacher/task/List.vue'),
@@ -57,6 +69,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '发布任务' }
       },
       {
+        path: 'tasks/:taskId/submissions',
+        name: 'TaskSubmissions',
+        component: () => import('@/views/teacher/task/Submissions.vue'),
+        meta: { title: '提交查看' }
+      },
+      {
         path: 'evaluations',
         name: 'TeacherEvaluations',
         component: () => import('@/views/teacher/evaluation/Grid.vue'),
@@ -67,6 +85,12 @@ const routes: RouteRecordRaw[] = [
         name: 'TeacherReports',
         component: () => import('@/views/teacher/report/List.vue'),
         meta: { title: '数据分析' }
+      },
+      {
+        path: 'messages',
+        name: 'TeacherMessages',
+        component: () => import('@/views/teacher/Message.vue'),
+        meta: { title: '消息中心' }
       }
     ]
   },
@@ -94,6 +118,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '任务详情' }
       },
       {
+        path: 'tasks/:id/submit',
+        name: 'TaskSubmit',
+        component: () => import('@/views/parent/task/Submit.vue'),
+        meta: { title: '提交作业' }
+      },
+      {
         path: 'evaluations',
         name: 'ParentEvaluations',
         component: () => import('@/views/parent/evaluation/Calendar.vue'),
@@ -104,6 +134,18 @@ const routes: RouteRecordRaw[] = [
         name: 'ParentGrowth',
         component: () => import('@/views/parent/growth/Index.vue'),
         meta: { title: '成长档案' }
+      },
+      {
+        path: 'achievements',
+        name: 'ParentAchievements',
+        component: () => import('@/views/parent/Achievement.vue'),
+        meta: { title: '我的成就' }
+      },
+      {
+        path: 'messages',
+        name: 'ParentMessages',
+        component: () => import('@/views/parent/Message.vue'),
+        meta: { title: '消息通知' }
       }
     ]
   },

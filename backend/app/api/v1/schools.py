@@ -99,7 +99,7 @@ async def create_class(
     db: AsyncSession = Depends(get_db)
 ):
     """创建班级"""
-    from app.models import Class as ClassModel
+    from app.models import Class as ClassModel, EvaluationDimension
 
     # 生成唯一邀请码
     invite_code = generate_invite_code()
@@ -120,6 +120,27 @@ async def create_class(
     )
 
     db.add(new_class)
+    await db.flush()  # 获取class_id
+
+    # 自动生成六列默认评价维度
+    default_dimensions = [
+        {"name": "课堂表现", "type": "star", "sort_order": 1},
+        {"name": "作业完成", "type": "star", "sort_order": 2},
+        {"name": "积极发言", "type": "star", "sort_order": 3},
+        {"name": "小组协作", "type": "star", "sort_order": 4},
+        {"name": "书写工整", "type": "star", "sort_order": 5},
+        {"name": "特殊表扬", "type": "text", "sort_order": 6},
+    ]
+
+    for dim_data in default_dimensions:
+        dimension = EvaluationDimension(
+            class_id=new_class.id,
+            name=dim_data["name"],
+            type=dim_data["type"],
+            sort_order=dim_data["sort_order"],
+        )
+        db.add(dimension)
+
     await db.commit()
     await db.refresh(new_class)
     

@@ -5,6 +5,11 @@ import type { School, Grade, Class } from './types'
 // 类型导出
 export type { Class as ClassResponse }
 
+// 获取当前用户的学校
+export function getMySchool() {
+  return http.get<School>('/auth/my-school')
+}
+
 // 获取学校详情
 export function getSchool(id: string) {
   return http.get<School>(`/schools/${id}`)

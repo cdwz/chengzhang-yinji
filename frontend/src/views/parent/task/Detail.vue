@@ -117,7 +117,7 @@
     <van-cell-group v-if="submission" inset class="submitted-images">
       <van-grid :column-num="3" :gutter="8">
         <van-grid-item v-for="(img, index) in submission.images" :key="index">
-          <van-image :src="img" fit="cover" @click="previewImage(img)" />
+          <van-image :src="img.image_url" fit="cover" @click="previewImage(img.image_url)" />
         </van-grid-item>
       </van-grid>
     </van-cell-group>

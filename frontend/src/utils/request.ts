@@ -79,6 +79,10 @@ export const http = {
     return request.delete(url, config)
   },
   
+  patch<T = any>(url: string, data?: any, config?: AxiosRequestConfig): Promise<T> {
+    return request.patch(url, data, config)
+  },
+  
   upload<T = any>(url: string, formData: FormData, onProgress?: (percent: number) => void): Promise<T> {
     return request.post(url, formData, {
       headers: {

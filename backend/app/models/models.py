@@ -289,6 +289,7 @@ class TeacherAnnotation(Base):
     is_viewed = Column(Boolean, default=False)
     is_example = Column(Boolean, default=False)  # 典范例
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # 关系
     image = relationship("SubmissionImage", back_populates="annotations")

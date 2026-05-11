@@ -94,13 +94,24 @@ export interface Task {
   created_at: string
 }
 
+export interface SubmissionImage {
+  id: string
+  submission_id: string
+  image_url: string
+  thumbnail_url?: string
+  sort_order: number
+  created_at: string
+}
+
 export interface TaskSubmission {
   id: string
   task_id: string
   student_id: string
+  student?: Student
   feedback?: string
   submitted_at: string
-  images: string[]
+  images: SubmissionImage[]
+  annotations?: any[]
 }
 
 export interface EvaluationDimension {

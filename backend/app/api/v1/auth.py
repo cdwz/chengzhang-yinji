@@ -137,3 +137,48 @@ async def get_current_user(
         )
     
     return UserResponse.model_validate(user)
+
+
+@router.get("/my-school")
+async def get_my_school(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取当前用户关联的学校"""
+    from app.core.security import decode_token
+    from app.models import SchoolAdmin, School
+    from sqlalchemy import select
+    
+    token = credentials.credentials
+    payload = decode_token(token)
+    
+    if not payload or payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的访问令牌"
+        )
+    
+    user_id = payload.get("sub")
+    role = payload.get("role")
+    
+    # 学校管理员和教师通过SchoolAdmin获取学校
+    if role in ["school_admin", "teacher"]:
+        result = await db.execute(
+            select(School)
+            .join(SchoolAdmin, SchoolAdmin.school_id == School.id)
+            .where(SchoolAdmin.user_id == user_id)
+        )
+        school = result.scalar_one_or_none()
+        
+        if school:
+            return {
+                "id": str(school.id),
+                "name": school.name,
+                "address": school.address
+            }
+    
+    # 如果没有关联学校，返回提示
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="您还未关联学校，请联系管理员"
+    )
