@@ -155,7 +155,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showSuccessToast } from 'vant'
 import { getTask, submitTask as submitTaskApi, uploadSubmissionImage as uploadImage } from '@/api/tasks'
-import { http } from '@/utils/request'
+import { http, getFileUrl } from '@/utils/request'
 import type { Task } from '@/api/types'
 
 const route = useRoute()
@@ -199,59 +199,30 @@ async function loadExistingSubmission() {
   try {
     const submissions = await http.get<any[]>('/tasks/my-submissions', { task_id: taskId })
     if (submissions && submissions.length > 0) {
-      existingSubmission.value = submissions[0]
+      const sub = submissions[0]
+      // 转换图片URL
+      if (sub.images && Array.isArray(sub.images)) {
+        sub.images = sub.images.map((img: string) => getFileUrl(img))
+      }
+      existingSubmission.value = sub
     }
   } catch (error) {
     console.error('加载提交记录失败', error)
   }
 }
 
-// 打开相机（优先使用 getUserMedia，失败则回退到 file input）
-async function openCamera() {
+// 打开相机（直接使用 file input 相机模式，避免HTTP下getUserMedia不可用）
+function openCamera() {
   if (photos.value.length >= 9) {
     showToast('最多上传9张图片')
     return
   }
   
-  // 尝试使用 getUserMedia
-  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-    showCamera.value = true
-    
-    // 初始化摄像头
-    setTimeout(async () => {
-      try {
-        stream.value = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' }
-        })
-        
-        // 创建视频元素
-        const video = document.createElement('video')
-        video.srcObject = stream.value
-        video.play()
-        video.style.width = '100%'
-        video.style.height = '100%'
-        video.style.objectFit = 'cover'
-        
-        previewRef.value?.appendChild(video)
-        videoEl.value = video
-      } catch (error) {
-        // getUserMedia 失败，关闭弹窗并使用 file input（相机模式）
-        console.log('getUserMedia 失败，使用 file input 相机模式')
-        showCamera.value = false
-        if (fileInputRef.value) {
-          fileInputRef.value.setAttribute('capture', 'environment')
-          fileInputRef.value.removeAttribute('multiple')
-          fileInputRef.value.click()
-        }
-      }
-    }, 100)
-  } else {
-    // 不支持 getUserMedia，直接使用 file input（相机模式）
-    if (fileInputRef.value) {
-      fileInputRef.value.setAttribute('capture', 'environment')
-      fileInputRef.value.removeAttribute('multiple')
-      fileInputRef.value.click()
-    }
+  // 直接使用 file input（相机模式）
+  if (fileInputRef.value) {
+    fileInputRef.value.setAttribute('capture', 'environment')
+    fileInputRef.value.removeAttribute('multiple')
+    fileInputRef.value.click()
   }
 }
 

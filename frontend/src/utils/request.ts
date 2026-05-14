@@ -3,17 +3,20 @@ import type { AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import { useUserStore } from '@/stores/user'
 import router from '@/router'
 
-// MinIO 文件服务地址
-const MINIO_URL = 'http://20.20.30.81:9002'
-const MINIO_BUCKET = 'czyj-files'
-
-/** 将 MinIO 相对路径转换为完整 URL */
+/** 将 MinIO 相对路径转换为代理URL */
 export function getFileUrl(path: string | undefined | null): string {
   if (!path) return ''
-  // 如果已经是完整URL，直接返回
-  if (path.startsWith('http://') || path.startsWith('https://')) return path
-  // 拼接 MinIO URL
-  return `${MINIO_URL}/${MINIO_BUCKET}/${path}`
+  // 如果已经是完整URL，提取路径部分
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    // 从URL中提取路径，如 http://20.20.30.81:9002/czyj-files/submissions/xxx.jpg -> submissions/xxx.jpg
+    const match = path.match(/\/czyj-files\/(.+)$/)
+    if (match) {
+      return `/api/images/czyj-files/${match[1]}`
+    }
+    return path
+  }
+  // 拼接代理API路径
+  return `/api/images/czyj-files/${path}`
 }
 
 // 创建axios实例
