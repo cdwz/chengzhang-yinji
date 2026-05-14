@@ -65,6 +65,10 @@
               <el-icon><EditPen /></el-icon>
               <span>评价录入</span>
             </el-menu-item>
+            <el-menu-item index="/teacher/evaluations/dimensions">
+              <el-icon><Setting /></el-icon>
+              <span>维度配置</span>
+            </el-menu-item>
             <el-menu-item index="/teacher/evaluations/records">
               <el-icon><Tickets /></el-icon>
               <span>评价记录</span>

@@ -105,6 +105,35 @@
           <van-empty v-if="!groups.length" description="暂无学习小组" />
         </div>
       </van-tab>
+      
+      <!-- 科目管理 -->
+      <van-tab title="科目管理" name="subjects">
+        <div class="tab-content">
+          <div class="subject-list">
+            <van-cell-group inset>
+              <van-cell
+                v-for="(subject, index) in subjects"
+                :key="index"
+                :title="subject"
+              >
+                <template #right-icon>
+                  <van-icon name="delete-o" @click="confirmRemoveSubject(index)" />
+                </template>
+              </van-cell>
+            </van-cell-group>
+            
+            <van-field
+              v-model="newSubject"
+              label="添加科目"
+              placeholder="输入科目名称"
+            >
+              <template #button>
+                <van-button size="small" type="primary" @click="addSubject">添加</van-button>
+              </template>
+            </van-field>
+          </div>
+        </div>
+      </van-tab>
     </van-tabs>
 
     <!-- 导入学生弹窗 -->
@@ -198,7 +227,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { showSuccessToast, showFailToast, showToast, showConfirmDialog } from 'vant'
-import { getClassDetail, getClasses } from '@/api/schools'
+import { getClassDetail, getClasses, updateClassSubjects } from '@/api/schools'
 import { getStudents, importStudents, updateStudent, deleteStudent, transferStudent, getStudyGroups, createStudyGroup, addStudentToGroup, removeStudentFromGroup } from '@/api/students'
 import type { ClassResponse } from '@/api/schools'
 import type { Student, StudyGroup } from '@/api/types'
@@ -488,12 +517,68 @@ async function loadClassOptions() {
   } catch {}
 }
 
+// ========== 科目管理 ==========
+const subjects = ref<string[]>([])
+const newSubject = ref('')
+
+// 加载科目列表
+async function loadSubjects() {
+  if (classInfo.value?.subjects) {
+    subjects.value = [...classInfo.value.subjects]
+  }
+}
+
+// 添加科目
+async function addSubject() {
+  if (!newSubject.value.trim()) {
+    showToast('请输入科目名称')
+    return
+  }
+  
+  if (subjects.value.includes(newSubject.value.trim())) {
+    showToast('科目已存在')
+    return
+  }
+  
+  const newSubjects = [...subjects.value, newSubject.value.trim()]
+  
+  // 保存到后端
+  try {
+    await updateClassSubjects(route.params.id as string, newSubjects)
+    subjects.value = newSubjects
+    newSubject.value = ''
+    showSuccessToast('科目添加成功')
+  } catch (error) {
+    showFailToast('保存失败')
+  }
+}
+
+// 删除科目
+async function confirmRemoveSubject(index: number) {
+  try {
+    await showConfirmDialog({
+      title: '删除科目',
+      message: `确认删除「${subjects.value[index]}」科目？`,
+      confirmButtonText: '确认删除',
+      confirmButtonColor: '#ee0a24'
+    })
+    
+    const newSubjects = subjects.value.filter((_, i) => i !== index)
+    await updateClassSubjects(route.params.id as string, newSubjects)
+    subjects.value = newSubjects
+    showSuccessToast('已删除')
+  } catch (e) {
+    // 取消删除
+  }
+}
+
 // 初始化
 onMounted(async () => {
   await loadClassInfo()
   await loadStudents()
   await loadGroups()
   await loadClassOptions()
+  await loadSubjects()
 })
 </script>
 

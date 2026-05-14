@@ -62,7 +62,10 @@
               :value="group.id"
             />
           </el-checkbox-group>
-          <div v-if="studyGroups.length === 0" class="empty-hint">暂无学习小组</div>
+          <div v-if="studyGroups.length === 0" class="empty-hint">
+            暂无学习小组，请先在班级管理中创建小组
+            <el-button link type="primary" @click="goToStudyGroups">前往创建</el-button>
+          </div>
         </el-form-item>
         
         <!-- 按学生搜索选择 -->
@@ -96,7 +99,17 @@
           <span style="margin-left: 8px; color: #909399;">分钟</span>
         </el-form-item>
         
-        <el-form-item label="任务日期" prop="task_date">
+        <!-- 任务周期选择 -->
+        <el-form-item label="任务周期">
+          <el-radio-group v-model="form.task_period" @change="onPeriodChange">
+            <el-radio value="day">单日</el-radio>
+            <el-radio value="week">周任务</el-radio>
+            <el-radio value="month">月任务</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        
+        <!-- 单日选择器 -->
+        <el-form-item v-if="form.task_period === 'day'" label="任务日期" prop="task_date">
           <el-date-picker
             v-model="form.task_date"
             type="date"
@@ -105,6 +118,36 @@
             value-format="YYYY-MM-DD"
             :disabled-date="disablePastDates"
           />
+        </el-form-item>
+        
+        <!-- 周选择器 -->
+        <el-form-item v-if="form.task_period === 'week'" label="任务周" prop="task_date">
+          <el-date-picker
+            v-model="form.task_date"
+            type="week"
+            placeholder="选择周"
+            format="gggg[年]第ww周"
+            value-format="YYYY-MM-DD"
+            :disabled-date="disablePastDates"
+          />
+          <div class="period-hint" v-if="form.task_date">
+            {{ getWeekDisplay(form.task_date) }}
+          </div>
+        </el-form-item>
+        
+        <!-- 月选择器 -->
+        <el-form-item v-if="form.task_period === 'month'" label="任务月" prop="task_date">
+          <el-date-picker
+            v-model="form.task_date"
+            type="month"
+            placeholder="选择月份"
+            format="YYYY年M月"
+            value-format="YYYY-MM-DD"
+            :disabled-date="disablePastDates"
+          />
+          <div class="period-hint" v-if="form.task_date">
+            {{ getMonthDisplay(form.task_date) }}
+          </div>
         </el-form-item>
         
         <el-form-item>
@@ -152,6 +195,7 @@ const form = reactive({
   content: '',
   suggested_duration: 30,
   task_date: new Date().toISOString().split('T')[0],
+  task_period: 'day' as 'day' | 'week' | 'month',
   target_type: 'all' as 'all' | 'groups' | 'students',
   target_ids: [] as string[]
 })
@@ -185,6 +229,42 @@ const disablePastDates = (date: Date) => {
   return date < today
 }
 
+// 获取周显示文本
+const getWeekDisplay = (dateStr: string) => {
+  const date = new Date(dateStr)
+  const year = date.getFullYear()
+  const oneJan = new Date(year, 0, 1)
+  const days = Math.floor((date.getTime() - oneJan.getTime()) / 86400000)
+  const weekNum = Math.ceil((days + oneJan.getDay() + 1) / 7)
+  return `${year}年第${weekNum}周（周一：${dateStr}）`
+}
+
+// 获取月显示文本
+const getMonthDisplay = (dateStr: string) => {
+  const date = new Date(dateStr)
+  const year = date.getFullYear()
+  const month = date.getMonth() + 1
+  return `${year}年${month}月任务`
+}
+
+// 周期类型变更
+const onPeriodChange = () => {
+  // 重置日期为当前周期类型的第一天
+  const now = new Date()
+  if (form.task_period === 'day') {
+    form.task_date = now.toISOString().split('T')[0]
+  } else if (form.task_period === 'week') {
+    // 获取本周一
+    const day = now.getDay()
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    const monday = new Date(now.setDate(diff))
+    form.task_date = monday.toISOString().split('T')[0]
+  } else if (form.task_period === 'month') {
+    // 获取本月1号
+    form.task_date = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+  }
+}
+
 // 班级变更时加载小组和学生
 const onClassChange = async (classId: string) => {
   form.target_ids = []
@@ -196,7 +276,7 @@ const onClassChange = async (classId: string) => {
 // 加载学习小组
 const loadStudyGroups = async (classId: string) => {
   try {
-    const res = await http.get<StudyGroup[]>(`/schools/classes/${classId}/groups`)
+    const res = await http.get<StudyGroup[]>('/students/groups', { class_id: classId })
     studyGroups.value = res || []
   } catch (error) {
     studyGroups.value = []
@@ -234,6 +314,15 @@ const searchStudents = async (query: string) => {
 // 发布对象类型切换
 const onTargetTypeChange = () => {
   form.target_ids = []
+}
+
+// 前往小组管理
+const goToStudyGroups = () => {
+  if (form.class_id) {
+    router.push(`/teacher/classes/${form.class_id}/groups`)
+  } else {
+    router.push('/teacher/classes')
+  }
 }
 
 onMounted(() => {
@@ -276,6 +365,7 @@ async function handleSubmit() {
       content: form.content || undefined,
       suggested_duration: form.suggested_duration || undefined,
       task_date: form.task_date,
+      task_period: form.task_period,
       target_type: form.target_type,
       target_ids: form.target_type !== 'all' ? form.target_ids : undefined
     })
@@ -303,6 +393,12 @@ async function handleSubmit() {
   .empty-hint {
     color: #909399;
     font-size: 12px;
+  }
+  
+  .period-hint {
+    color: #409eff;
+    font-size: 12px;
+    margin-top: 4px;
   }
 }
 </style>

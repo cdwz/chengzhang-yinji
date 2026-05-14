@@ -354,9 +354,9 @@ import BooleanInput from '@/components/evaluation/BooleanInput.vue'
 import TextInput from '@/components/evaluation/TextInput.vue'
 
 // 获取小组名称
-const getGroupName = (_groupId: string) => {
-  // TODO: 从小组列表中获取名称
-  return ''
+const getGroupName = (groupId: string) => {
+  const group = studyGroups.value.find(g => g.id === groupId)
+  return group?.name || ''
 }
 
 // 保存单个评价

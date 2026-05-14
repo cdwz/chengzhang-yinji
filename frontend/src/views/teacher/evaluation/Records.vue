@@ -274,7 +274,9 @@ const formatEvaluationValue = (record: EvaluationRecord) => {
     case 'score':
       return `${value}${config?.score_type === '10' ? '分' : '分'}`
     case 'ab_score':
-      return `A${record.a_score || 0}/B${record.b_score || 0}`
+      const aScore = record.a_score || 0
+      const bScore = record.b_score || 0
+      return `A${aScore}/B${bScore} = ${aScore + bScore}分`
     case 'boolean':
       return value ? '✅ 完成' : '❌ 未完成'
     case 'text':

@@ -152,6 +152,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Download, Search, Picture } from '@element-plus/icons-vue'
 import { getSubmissions, getTask } from '@/api/tasks'
+import { getFileUrl } from '@/utils/request'
 import AnnotationCanvas from '@/components/AnnotationCanvas.vue'
 import type { Task, TaskSubmission, SubmissionImage } from '@/api/types'
 
@@ -182,13 +183,18 @@ function getImages(submission: TaskSubmission): SubmissionImage[] {
     return (submission.images as string[]).map((url, idx) => ({
       id: `img-${idx}`,
       submission_id: submission.id,
-      image_url: url,
-      thumbnail_url: url,
+      image_url: getFileUrl(url),
+      thumbnail_url: getFileUrl(url),
       sort_order: idx,
       created_at: submission.submitted_at
     }))
   }
-  return submission.images as SubmissionImage[]
+  // 如果是对象数组，转换URL
+  return (submission.images as SubmissionImage[]).map(img => ({
+    ...img,
+    image_url: getFileUrl(img.image_url),
+    thumbnail_url: getFileUrl(img.thumbnail_url)
+  }))
 }
 
 // 过滤后的提交列表

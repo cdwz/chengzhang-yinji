@@ -220,6 +220,7 @@ class LearningTask(Base):
     content = Column(Text)
     suggested_duration = Column(Integer)  # 建议时长（分钟）
     task_date = Column(Date, nullable=False)
+    task_period = Column(String(10), default='day')  # day/week/month - 任务周期类型
     is_optional = Column(Boolean, default=True)  # 必须为TRUE（合规）
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.utcnow)

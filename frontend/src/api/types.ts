@@ -91,6 +91,7 @@ export interface Task {
   content?: string
   suggested_duration?: number
   task_date: string
+  task_period?: string  // day/week/month
   is_optional: boolean
   group_name?: string
   target_type: string

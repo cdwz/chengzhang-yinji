@@ -117,7 +117,7 @@
     <van-cell-group v-if="submission" inset class="submitted-images">
       <van-grid :column-num="3" :gutter="8">
         <van-grid-item v-for="(img, index) in submissionImages" :key="index">
-          <van-image :src="typeof img === 'string' ? img : img.image_url" fit="cover" @click="previewImage(typeof img === 'string' ? img : img.image_url)" />
+          <van-image :src="img" fit="cover" @click="previewImage(img)" />
         </van-grid-item>
       </van-grid>
     </van-cell-group>
@@ -136,7 +136,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showSuccessToast, showFailToast, showImagePreview, showConfirmDialog, showLoadingToast, closeToast } from 'vant'
-import { http } from '@/utils/request'
+import { http, getFileUrl } from '@/utils/request'
 import { compressImage } from '@/utils/imageCompress'
 import { detectFileTilt, type TiltResult } from '@/utils/imageTiltDetect'
 import A4CameraGuide from '@/components/A4CameraGuide.vue'
@@ -156,7 +156,13 @@ const showCameraGuide = ref(false)
 // 计算属性：处理 submission.images 的类型
 const submissionImages = computed(() => {
   if (!submission.value?.images) return []
-  return submission.value.images
+  const images = submission.value.images
+  // 如果是字符串数组，转换为完整URL
+  if (images.length > 0 && typeof images[0] === 'string') {
+    return (images as string[]).map(url => getFileUrl(url))
+  }
+  // 如果是对象数组，转换image_url
+  return (images as any[]).map(img => getFileUrl(img.image_url))
 })
 
 // 加载任务详情

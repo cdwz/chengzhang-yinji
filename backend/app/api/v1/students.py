@@ -24,6 +24,18 @@ from app.schemas import (
 from app.core.security import decode_token
 from pydantic import BaseModel
 
+
+class ParentStudentResponse(BaseModel):
+    """家长绑定的学生信息"""
+    id: str
+    name: str
+    student_number: Optional[str] = None
+    class_id: str
+    class_name: str
+    grade_name: Optional[str] = None
+    school_name: Optional[str] = None
+    relation_type: str = "家长"
+
 router = APIRouter(prefix="/students", tags=["学生管理"])
 security = HTTPBearer()
 
@@ -56,6 +68,76 @@ async def get_current_user(
 
 
 # ==================== 学生列表和创建 ====================
+
+@router.get("/my", response_model=List[ParentStudentResponse])
+async def get_my_students(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取当前家长绑定的学生信息（家长端）"""
+    from app.core.security import decode_token
+    
+    token = credentials.credentials
+    payload = decode_token(token)
+    
+    if not payload or payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="无效的访问令牌"
+        )
+    
+    user_id = payload.get("sub")
+    role = payload.get("role")
+    
+    if role != "parent":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有家长角色可以访问此接口"
+        )
+    
+    # 查询家长绑定的学生
+    result = await db.execute(
+        select(ParentStudent)
+        .where(ParentStudent.parent_id == user_id)
+    )
+    parent_students = result.scalars().all()
+    
+    if not parent_students:
+        return []
+    
+    # 构建响应
+    response = []
+    for ps in parent_students:
+        # 获取学生信息
+        s_result = await db.execute(
+            select(Student)
+            .options(selectinload(Student.class_).selectinload(ClassModel.grade).selectinload(Grade.school))
+            .where(Student.id == ps.student_id)
+        )
+        student = s_result.scalar_one_or_none()
+        
+        if student and student.class_:
+            class_name = student.class_.name
+            grade_name = student.class_.grade.name if student.class_.grade else None
+            school_name = student.class_.grade.school.name if student.class_.grade and student.class_.grade.school else None
+        else:
+            class_name = "未知班级"
+            grade_name = None
+            school_name = None
+        
+        response.append(ParentStudentResponse(
+            id=str(student.id) if student else "",
+            name=student.name if student else "未知学生",
+            student_number=student.student_number if student else None,
+            class_id=str(student.class_id) if student else "",
+            class_name=class_name,
+            grade_name=grade_name,
+            school_name=school_name,
+            relation_type=ps.relation_type or "家长"
+        ))
+    
+    return response
+
 
 @router.get("", response_model=StudentListResponse)
 async def list_students(

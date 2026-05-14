@@ -108,6 +108,7 @@ async def _get_task_response(task: LearningTask, db: AsyncSession) -> TaskRespon
         content=task.content,
         suggested_duration=task.suggested_duration,
         task_date=task.task_date,
+        task_period=getattr(task, 'task_period', 'day') or 'day',
         is_optional=task.is_optional,
         group_name=group_name,
         target_type=task.target_type or 'all',
@@ -160,6 +161,7 @@ async def create_task(
         content=task_data.content,
         suggested_duration=task_data.suggested_duration,
         task_date=task_data.task_date,
+        task_period=task_data.task_period or 'day',
         is_optional=True,  # 必须为选做
         created_by=user["id"]
     )
@@ -419,6 +421,108 @@ async def get_task_stats_detail(
     }
 
 
+@router.get("/submissions", response_model=List[TaskSubmissionResponse])
+async def list_submissions(
+    task_id: Optional[str] = Query(None),
+    class_id: Optional[str] = Query(None),
+    date: Optional[date] = Query(None),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取提交列表（教师端）"""
+    query = select(TaskSubmission)
+    
+    if task_id:
+        query = query.where(TaskSubmission.task_id == task_id)
+    
+    query = query.order_by(TaskSubmission.submitted_at.desc())
+    result = await db.execute(query)
+    submissions = result.scalars().all()
+    
+    response = []
+    for sub in submissions:
+        # 获取图片
+        img_result = await db.execute(
+            select(SubmissionImage).where(SubmissionImage.submission_id == sub.id)
+        )
+        images = img_result.scalars().all()
+        
+        # 获取学生名称
+        s_result = await db.execute(
+            select(Student).where(Student.id == sub.student_id)
+        )
+        student = s_result.scalar_one_or_none()
+        
+        response.append(TaskSubmissionResponse(
+            id=sub.id,
+            task_id=sub.task_id,
+            student_id=sub.student_id,
+            student_name=student.name if student else None,
+            feedback=sub.feedback,
+            submitted_at=sub.submitted_at,
+            images=[img.original_url for img in images]
+        ))
+    
+    return response
+
+
+@router.get("/my-submissions", response_model=List[TaskSubmissionResponse])
+async def list_my_submissions(
+    task_id: Optional[str] = Query(None),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取当前家长的提交记录（家长端）"""
+    from app.models import ParentStudent
+    
+    # 获取家长绑定的学生
+    ps_result = await db.execute(
+        select(ParentStudent).where(ParentStudent.parent_id == user["id"])
+    )
+    parent_students = ps_result.scalars().all()
+    
+    if not parent_students:
+        return []
+    
+    student_ids = [ps.student_id for ps in parent_students]
+    
+    # 查询提交记录
+    query = select(TaskSubmission).where(TaskSubmission.student_id.in_(student_ids))
+    
+    if task_id:
+        query = query.where(TaskSubmission.task_id == task_id)
+    
+    query = query.order_by(TaskSubmission.submitted_at.desc())
+    result = await db.execute(query)
+    submissions = result.scalars().all()
+    
+    response = []
+    for sub in submissions:
+        # 获取图片
+        img_result = await db.execute(
+            select(SubmissionImage).where(SubmissionImage.submission_id == sub.id)
+        )
+        images = img_result.scalars().all()
+        
+        # 获取图片完整URL
+        from app.core.storage import get_file_url
+        image_urls = []
+        for img in images:
+            url = await get_file_url(img.original_url)
+            image_urls.append(url)
+        
+        response.append(TaskSubmissionResponse(
+            id=sub.id,
+            task_id=sub.task_id,
+            student_id=sub.student_id,
+            feedback=sub.feedback,
+            submitted_at=sub.submitted_at,
+            images=image_urls
+        ))
+    
+    return response
+
+
 @router.get("/{task_id}", response_model=TaskResponse)
 async def get_task(
     task_id: str,
@@ -568,47 +672,3 @@ async def upload_image(
     
     return MessageResponse(message="图片上传成功")
 
-
-@router.get("/submissions", response_model=List[TaskSubmissionResponse])
-async def list_submissions(
-    task_id: Optional[str] = Query(None),
-    class_id: Optional[str] = Query(None),
-    date: Optional[date] = Query(None),
-    user: dict = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
-    """获取提交列表（教师端）"""
-    query = select(TaskSubmission)
-    
-    if task_id:
-        query = query.where(TaskSubmission.task_id == task_id)
-    
-    query = query.order_by(TaskSubmission.submitted_at.desc())
-    result = await db.execute(query)
-    submissions = result.scalars().all()
-    
-    response = []
-    for sub in submissions:
-        # 获取图片
-        img_result = await db.execute(
-            select(SubmissionImage).where(SubmissionImage.submission_id == sub.id)
-        )
-        images = img_result.scalars().all()
-        
-        # 获取学生名称
-        s_result = await db.execute(
-            select(Student).where(Student.id == sub.student_id)
-        )
-        student = s_result.scalar_one_or_none()
-        
-        response.append(TaskSubmissionResponse(
-            id=sub.id,
-            task_id=sub.task_id,
-            student_id=sub.student_id,
-            student_name=student.name if student else None,
-            feedback=sub.feedback,
-            submitted_at=sub.submitted_at,
-            images=[img.original_url for img in images]
-        ))
-    
-    return response

@@ -235,3 +235,111 @@ async def get_my_evaluations(
     records = result.scalars().all()
     
     return [EvaluationResponse.model_validate(r) for r in records]
+
+
+@router.get("/my-with-class-stats")
+async def get_my_evaluations_with_class_stats(
+    start_date: Optional[date] = Query(None),
+    end_date: Optional[date] = Query(None),
+    user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取自己孩子的评价记录及班级整体分布（家长端）"""
+    from app.models import ParentStudent
+    from sqlalchemy import func
+    
+    # 获取家长绑定的学生
+    ps_result = await db.execute(
+        select(ParentStudent).where(ParentStudent.parent_id == user["id"])
+    )
+    parent_students = ps_result.scalars().all()
+    
+    if not parent_students:
+        return {"my_records": [], "class_stats": None}
+    
+    student_id = parent_students[0].student_id
+    
+    # 获取学生信息
+    s_result = await db.execute(
+        select(Student).where(Student.id == student_id)
+    )
+    student = s_result.scalar_one_or_none()
+    
+    if not student:
+        return {"my_records": [], "class_stats": None}
+    
+    class_id = student.class_id
+    
+    # 查询自己孩子的评价记录
+    query = select(EvaluationRecord).where(
+        EvaluationRecord.student_id == student_id
+    )
+    
+    if start_date:
+        query = query.where(EvaluationRecord.record_date >= start_date)
+    if end_date:
+        query = query.where(EvaluationRecord.record_date <= end_date)
+    
+    query = query.order_by(EvaluationRecord.record_date.desc())
+    result = await db.execute(query)
+    my_records = result.scalars().all()
+    
+    # 查询班级所有评价记录
+    # 先获取班级所有学生
+    all_students_result = await db.execute(
+        select(Student).where(Student.class_id == class_id)
+    )
+    all_students = all_students_result.scalars().all()
+    student_map = {s.id: s for s in all_students}
+    all_student_ids = [s.id for s in all_students]
+    
+    # 获取班级所有评价
+    class_query = select(EvaluationRecord).where(
+        EvaluationRecord.student_id.in_(all_student_ids)
+    )
+    
+    if start_date:
+        class_query = class_query.where(EvaluationRecord.record_date >= start_date)
+    if end_date:
+        class_query = class_query.where(EvaluationRecord.record_date <= end_date)
+    
+    class_result = await db.execute(class_query)
+    class_records = class_result.scalars().all()
+    
+    # 计算班级平均星级（假设value是数字）
+    class_avg = None
+    if class_records:
+        try:
+            values = [float(r.value) for r in class_records if r.value.replace('.', '').isdigit()]
+            if values:
+                class_avg = round(sum(values) / len(values), 2)
+        except:
+            pass
+    
+    # 构建班级记录列表（其他学生用学号代替姓名）
+    class_records_anonymous = []
+    for r in class_records:
+        s = student_map.get(r.student_id)
+        display_name = s.name if r.student_id == student_id else (s.student_number if s else "未知")
+        class_records_anonymous.append({
+            "id": str(r.id),
+            "dimension_id": str(r.dimension_id),
+            "student_id": str(r.student_id),
+            "student_name": display_name,
+            "record_date": str(r.record_date),
+            "value": r.value,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+            "is_my_child": r.student_id == student_id
+        })
+    
+    return {
+        "my_records": [EvaluationResponse.model_validate(r).model_dump() for r in my_records],
+        "my_child_name": student.name,
+        "my_child_id": str(student_id),
+        "class_stats": {
+            "avg_rating": class_avg,
+            "total_records": len(class_records),
+            "total_students": len(all_students)
+        },
+        "class_records": class_records_anonymous
+    }

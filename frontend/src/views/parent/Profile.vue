@@ -5,13 +5,19 @@
       <van-cell title="手机号" :value="user?.phone" />
     </van-cell-group>
     
-    <van-cell-group inset style="margin-top: 12px;">
+    <van-cell-group inset style="margin-top: 12px;" v-if="students.length > 0">
       <van-cell title="绑定的学生">
         <template #value>
-          <span v-if="students.length === 0">未绑定</span>
-          <span v-else>{{ students.map(s => s.name).join('、') }}</span>
+          <div v-for="s in students" :key="s.id" class="student-info">
+            <span class="student-name">{{ s.name }}</span>
+            <span class="student-class">（{{ s.class_name }}）</span>
+          </div>
         </template>
       </van-cell>
+    </van-cell-group>
+    
+    <van-cell-group inset style="margin-top: 12px;" v-else>
+      <van-cell title="绑定的学生" value="未绑定" />
     </van-cell-group>
     
     <div class="logout-btn">
@@ -34,7 +40,7 @@ const students = ref<any[]>([])
 
 onMounted(async () => {
   try {
-    const data = await http.get<any[]>('/auth/my-students')
+    const data = await http.get<any[]>('/students/my')
     students.value = data || []
   } catch (error) {
     console.error('加载学生列表失败', error)
@@ -59,6 +65,18 @@ async function logout() {
 .parent-profile {
   padding: 12px;
   padding-bottom: 80px;
+  
+  .student-info {
+    text-align: right;
+    .student-name {
+      font-weight: 500;
+    }
+    .student-class {
+      color: #909399;
+      font-size: 12px;
+      margin-left: 4px;
+    }
+  }
   
   .logout-btn {
     margin-top: 24px;

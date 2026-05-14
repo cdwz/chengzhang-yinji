@@ -51,8 +51,13 @@ export function getClass(id: string) {
 }
 
 // 修改班级
-export function updateClass(id: string, data: { name?: string; grade_id?: string }) {
+export function updateClass(id: string, data: { name?: string; grade_id?: string; subjects?: string[] }) {
   return http.put<Class>(`/schools/classes/${id}`, data)
+}
+
+// 更新班级科目
+export function updateClassSubjects(id: string, subjects: string[]) {
+  return http.put<Class>(`/schools/classes/${id}`, { subjects })
 }
 
 // 删除班级

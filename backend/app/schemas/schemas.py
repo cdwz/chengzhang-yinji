@@ -22,6 +22,7 @@ class EvaluationType(str, Enum):
     GRADE = "grade"        # 等第 A/B/C/D
     BOOLEAN = "boolean"    # 是否完成
     SCORE = "score"        # 分数
+    AB_SCORE = "ab_score"  # AB卷分数
     TEXT = "text"          # 文本备注
 
 
@@ -212,6 +213,7 @@ class TaskCreate(BaseModel):
     content: Optional[str] = None
     suggested_duration: Optional[int] = Field(None, ge=1, le=180, description="建议时长(分钟)")
     task_date: date = Field(..., description="任务日期")
+    task_period: str = Field(default='day', description="任务周期类型: day/week/month")
 
 
 class TaskResponse(BaseModel):
@@ -221,6 +223,7 @@ class TaskResponse(BaseModel):
     content: Optional[str] = None
     suggested_duration: Optional[int] = None
     task_date: date
+    task_period: str = 'day'  # 任务周期类型: day/week/month
     is_optional: bool = True
     group_name: Optional[str] = None
     target_type: str = 'all'

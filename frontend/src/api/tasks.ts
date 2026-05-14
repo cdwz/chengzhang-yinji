@@ -30,6 +30,7 @@ export function createTask(data: {
   content?: string
   suggested_duration?: number
   task_date: string
+  task_period?: string  // day/week/month
   group_id?: string
   target_type?: string
   target_ids?: string[]
@@ -59,6 +60,11 @@ export function uploadSubmissionImage(submissionId: string, file: File) {
 // 获取提交列表（教师端）
 export function getSubmissions(params?: { task_id?: string; class_id?: string; date?: string }) {
   return http.get<TaskSubmission[]>('/tasks/submissions', params)
+}
+
+// 获取当前家长的提交记录（家长端）
+export function getMySubmissions(params?: { task_id?: string }) {
+  return http.get<TaskSubmission[]>('/tasks/my-submissions', params)
 }
 
 // ==================== 任务统计 ====================

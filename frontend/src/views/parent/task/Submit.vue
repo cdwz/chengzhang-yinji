@@ -13,9 +13,40 @@
       <van-cell v-if="task?.suggested_duration" title="建议时长" :value="task.suggested_duration + '分钟'" />
     </van-cell-group>
     
+    <!-- 隐藏的文件输入框（备选方案） -->
+    <input 
+      ref="fileInputRef"
+      type="file" 
+      accept="image/*" 
+      capture="environment"
+      style="display: none"
+      @change="handleFileSelect"
+    />
+    
     <!-- 拍照区域 -->
     <div class="photo-section">
       <div class="section-title">拍照上传</div>
+      
+      <!-- 已提交的图片 -->
+      <div class="submitted-images" v-if="existingSubmission && existingSubmission.images?.length > 0">
+        <div class="submitted-header">
+          <van-tag type="success">已提交</van-tag>
+          <span class="submitted-time">{{ new Date(existingSubmission.submitted_at).toLocaleString() }}</span>
+        </div>
+        <div class="photo-list">
+          <div 
+            v-for="(img, index) in existingSubmission.images" 
+            :key="index"
+            class="photo-item"
+          >
+            <img :src="img" @click="previewExistingImage(img)" />
+          </div>
+        </div>
+        <div v-if="existingSubmission.feedback" class="submitted-feedback">
+          <span class="label">家长反馈：</span>
+          {{ existingSubmission.feedback }}
+        </div>
+      </div>
       
       <!-- 已拍照片列表 -->
       <div class="photo-list" v-if="photos.length > 0">
@@ -29,17 +60,25 @@
         </div>
         
         <!-- 继续添加 -->
-        <div class="photo-item add-btn" v-if="photos.length < 9" @click="takePhoto">
+        <div class="photo-item add-btn" v-if="photos.length < 9 && !existingSubmission" @click="takePhoto">
           <van-icon name="plus" size="24" />
           <span>继续添加</span>
         </div>
       </div>
       
       <!-- 拍照按钮 -->
-      <div class="photo-empty" v-else @click="takePhoto">
-        <van-icon name="photograph" size="48" />
-        <p>点击拍照上传作业</p>
+      <div class="photo-empty" v-else-if="!existingSubmission">
+        <van-grid :column-num="2" :gutter="12">
+          <van-grid-item icon="photograph" text="拍照" @click="openCamera" />
+          <van-grid-item icon="photo-o" text="相册" @click="openAlbum" />
+        </van-grid>
         <p class="tip">建议将作业平铺在桌面上拍摄</p>
+      </div>
+      
+      <!-- 已提交提示 -->
+      <div class="already-submitted" v-else>
+        <van-icon name="checked" size="24" color="#52c41a" />
+        <span>此任务已完成提交</span>
       </div>
     </div>
     
@@ -70,7 +109,7 @@
     </van-cell-group>
     
     <!-- 提交按钮 -->
-    <div class="submit-area">
+    <div class="submit-area" v-if="!existingSubmission">
       <van-button 
         type="primary" 
         block 
@@ -107,7 +146,7 @@
     </van-popup>
     
     <!-- 图片预览 -->
-    <van-image-preview v-model:show="showPreview" :images="previewImages" :start-position="previewIndex" />
+    <van-image-preview v-model:show="showPreview" :images="existingPreviewImages.length > 0 ? existingPreviewImages : previewImages" :start-position="previewIndex" @close="existingPreviewImages = []" />
   </div>
 </template>
 
@@ -116,6 +155,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showToast, showSuccessToast } from 'vant'
 import { getTask, submitTask as submitTaskApi, uploadSubmissionImage as uploadImage } from '@/api/tasks'
+import { http } from '@/utils/request'
 import type { Task } from '@/api/types'
 
 const route = useRoute()
@@ -133,14 +173,18 @@ const capturing = ref(false)
 const previewRef = ref<HTMLDivElement>()
 const stream = ref<MediaStream | null>(null)
 const videoEl = ref<HTMLVideoElement | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
 
 // 图片预览
 const showPreview = ref(false)
 const previewIndex = ref(0)
 const previewImages = computed(() => photos.value.map(p => p.preview))
+const existingSubmission = ref<any>(null)
+const existingPreviewImages = ref<string[]>([])
 
 onMounted(() => {
   loadTask()
+  loadExistingSubmission()
 })
 
 async function loadTask() {
@@ -151,36 +195,83 @@ async function loadTask() {
   }
 }
 
-async function takePhoto() {
+async function loadExistingSubmission() {
+  try {
+    const submissions = await http.get<any[]>('/tasks/my-submissions', { task_id: taskId })
+    if (submissions && submissions.length > 0) {
+      existingSubmission.value = submissions[0]
+    }
+  } catch (error) {
+    console.error('加载提交记录失败', error)
+  }
+}
+
+// 打开相机（优先使用 getUserMedia，失败则回退到 file input）
+async function openCamera() {
   if (photos.value.length >= 9) {
     showToast('最多上传9张图片')
     return
   }
   
-  showCamera.value = true
-  
-  // 初始化摄像头
-  setTimeout(async () => {
-    try {
-      stream.value = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }
-      })
-      
-      // 创建视频元素
-      const video = document.createElement('video')
-      video.srcObject = stream.value
-      video.play()
-      video.style.width = '100%'
-      video.style.height = '100%'
-      video.style.objectFit = 'cover'
-      
-      previewRef.value?.appendChild(video)
-      videoEl.value = video
-    } catch (error) {
-      showToast('无法访问摄像头')
-      showCamera.value = false
+  // 尝试使用 getUserMedia
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    showCamera.value = true
+    
+    // 初始化摄像头
+    setTimeout(async () => {
+      try {
+        stream.value = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        })
+        
+        // 创建视频元素
+        const video = document.createElement('video')
+        video.srcObject = stream.value
+        video.play()
+        video.style.width = '100%'
+        video.style.height = '100%'
+        video.style.objectFit = 'cover'
+        
+        previewRef.value?.appendChild(video)
+        videoEl.value = video
+      } catch (error) {
+        // getUserMedia 失败，关闭弹窗并使用 file input（相机模式）
+        console.log('getUserMedia 失败，使用 file input 相机模式')
+        showCamera.value = false
+        if (fileInputRef.value) {
+          fileInputRef.value.setAttribute('capture', 'environment')
+          fileInputRef.value.removeAttribute('multiple')
+          fileInputRef.value.click()
+        }
+      }
+    }, 100)
+  } else {
+    // 不支持 getUserMedia，直接使用 file input（相机模式）
+    if (fileInputRef.value) {
+      fileInputRef.value.setAttribute('capture', 'environment')
+      fileInputRef.value.removeAttribute('multiple')
+      fileInputRef.value.click()
     }
-  }, 100)
+  }
+}
+
+// 打开相册（直接使用 file input，支持多选）
+function openAlbum() {
+  if (photos.value.length >= 9) {
+    showToast('最多上传9张图片')
+    return
+  }
+  
+  if (fileInputRef.value) {
+    fileInputRef.value.removeAttribute('capture')
+    fileInputRef.value.setAttribute('multiple', 'true')
+    fileInputRef.value.click()
+  }
+}
+
+// 兼容旧的 takePhoto 方法（保持向后兼容）
+async function takePhoto() {
+  await openCamera()
 }
 
 function closeCamera() {
@@ -296,8 +387,67 @@ function removePhoto(index: number) {
   photos.value.splice(index, 1)
 }
 
+// 处理文件选择（相机/相册模式）
+async function handleFileSelect(event: Event) {
+  const input = event.target as HTMLInputElement
+  const files = input.files
+  if (!files || files.length === 0) return
+  
+  // 支持多文件选择
+  const fileArray = Array.from(files)
+  const remainingSlots = 9 - photos.value.length
+  const filesToProcess = fileArray.slice(0, remainingSlots)
+  
+  if (filesToProcess.length < fileArray.length) {
+    showToast(`最多还能添加${remainingSlots}张图片`)
+  }
+  
+  for (const file of filesToProcess) {
+    // 检查文件类型
+    if (!file.type.startsWith('image/')) {
+      showToast(`${file.name} 不是图片文件，已跳过`)
+      continue
+    }
+    
+    // 检查文件大小
+    if (file.size > 10 * 1024 * 1024) {
+      showToast(`${file.name} 超过10MB，已跳过`)
+      continue
+    }
+    
+    try {
+      // 压缩图片（如果太大）
+      let finalFile = file
+      if (file.size > 2 * 1024 * 1024) {
+        const blob = await compressImage(file, 0.6)
+        finalFile = new File([blob], file.name, { type: 'image/jpeg' })
+      }
+      
+      // 创建预览URL
+      const previewUrl = URL.createObjectURL(finalFile)
+      photos.value.push({ file: finalFile, preview: previewUrl })
+    } catch (error) {
+      showToast(`${file.name} 添加失败`)
+    }
+  }
+  
+  if (filesToProcess.some(f => f.type.startsWith('image/'))) {
+    showSuccessToast(`已添加${Math.min(filesToProcess.length, remainingSlots)}张图片`)
+  }
+  
+  // 重置 input
+  input.value = ''
+}
+
 function previewPhoto(index: number) {
   previewIndex.value = index
+  showPreview.value = true
+}
+
+function previewExistingImage(url: string) {
+  existingPreviewImages.value = existingSubmission.value?.images || []
+  previewIndex.value = existingPreviewImages.value.indexOf(url)
+  if (previewIndex.value < 0) previewIndex.value = 0
   showPreview.value = true
 }
 
@@ -398,17 +548,82 @@ function goBack() {
     .photo-empty {
       background: #fff;
       border-radius: 8px;
-      padding: 40px;
+      padding: 20px;
       text-align: center;
-      color: #999;
       
-      p {
-        margin: 8px 0 0 0;
+      .van-grid {
+        margin: 0 auto;
+        max-width: 280px;
+      }
+      
+      .van-grid-item {
+        :deep(.van-grid-item__content) {
+          padding: 24px 12px;
+          
+          .van-grid-item__icon {
+            font-size: 32px;
+            color: #1989fa;
+          }
+          
+          .van-grid-item__text {
+            margin-top: 8px;
+            color: #333;
+          }
+        }
       }
       
       .tip {
         font-size: 12px;
         color: #ccc;
+        margin-top: 16px;
+      }
+    }
+    
+    .submitted-images {
+      background: #f0f9eb;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+      
+      .submitted-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 12px;
+        
+        .submitted-time {
+          font-size: 12px;
+          color: #909399;
+        }
+      }
+      
+      .photo-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        
+        .photo-item {
+          width: calc(33.33% - 6px);
+          aspect-ratio: 1;
+          border-radius: 8px;
+          overflow: hidden;
+          
+          img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+          }
+        }
+      }
+      
+      .submitted-feedback {
+        margin-top: 8px;
+        font-size: 14px;
+        color: #606266;
+        
+        .label {
+          color: #909399;
+        }
       }
     }
   }

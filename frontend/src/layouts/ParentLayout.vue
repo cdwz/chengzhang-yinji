@@ -65,6 +65,15 @@ function goBack() {
 .content {
   flex: 1;
   padding: 16px;
-  padding-bottom: 60px;
+  padding-bottom: 70px; // 为底部导航留出空间
+}
+
+// 底部导航固定定位
+:deep(.van-tabbar) {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 999;
 }
 </style>

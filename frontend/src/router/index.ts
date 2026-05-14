@@ -95,6 +95,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '评价录入' }
       },
       {
+        path: 'evaluations/dimensions',
+        name: 'EvaluationDimensionsSelect',
+        component: () => import('@/views/teacher/evaluation/DimensionsSelect.vue'),
+        meta: { title: '维度配置' }
+      },
+      {
         path: 'evaluations/records',
         name: 'EvaluationRecords',
         component: () => import('@/views/teacher/evaluation/Records.vue'),
