@@ -1,72 +1,89 @@
 <template>
   <div class="evaluation-calendar">
-    <!-- 日历 -->
-    <van-calendar
-      :show-title="false"
-      :poppable="false"
-      :show-confirm="false"
-      :min-date="minDate"
-      :max-date="maxDate"
-      :style="{ height: '350px' }"
-      @select="onDateSelect"
-    >
-      <template #bottom-info="day">
-        <div v-if="hasEvaluation(day.date)" class="dot-indicator"></div>
-      </template>
-    </van-calendar>
-
-    <!-- 选中日期的评价记录 -->
-    <div class="section-title">{{ selectedDateLabel }}的评价记录</div>
-    
-    <van-pull-refresh v-model="refreshing" @refresh="loadEvaluations">
-      <div v-if="evaluations.length > 0" class="evaluation-list">
-        <van-cell-group inset>
-          <van-cell
-            v-for="record in evaluations"
-            :key="record.id"
-            :title="getDimensionName(record.dimension_id)"
-            :label="formatTime(record.updated_at)"
-          >
-            <template #value>
-              <component
-                :is="getRatingDisplay(record)"
-                :value="record.value"
-                readonly
-              />
-            </template>
-          </van-cell>
-        </van-cell-group>
-      </div>
+    <!-- 顶部标签卡 -->
+    <van-tabs v-model:active="activeTab" sticky>
+      <!-- 今日评价 -->
+      <van-tab title="今日评价">
+        <div class="tab-content">
+          <div class="date-info">
+            <van-icon name="calendar-o" />
+            <span>{{ todayLabel }}</span>
+            <van-tag v-if="isWeekend" type="warning" >周末</van-tag>
+            <van-tag v-else-if="isHoliday" type="danger" >节假日</van-tag>
+          </div>
+          
+          <van-loading v-if="loadingToday" size="24px" vertical>加载中...</van-loading>
+          
+          <div v-else-if="todayEvaluations.length > 0" class="evaluation-list">
+            <van-cell-group inset>
+              <van-cell
+                v-for="record in todayEvaluations"
+                :key="record.id"
+                :title="getDimensionName(record.dimension_id)"
+                :label="formatTime(record.updated_at)"
+              >
+                <template #value>
+                  <van-rate v-if="getDimensionType(record.dimension_id) === 'star'" :model-value="Number(record.value)" readonly size="16" />
+                  <van-tag v-else type="primary">{{ record.value }}</van-tag>
+                </template>
+              </van-cell>
+            </van-cell-group>
+          </div>
+          
+          <van-empty v-else description="暂无评价记录" image-size="80" />
+        </div>
+      </van-tab>
       
-      <van-empty v-else description="当日暂无评价记录" />
-    </van-pull-refresh>
-
-    <!-- 统计概览 -->
-    <div class="section-title">本月统计</div>
-    <van-cell-group inset class="stats-section">
-      <div class="stats-grid">
-        <div class="stat-item">
-          <div class="stat-value">{{ stats.total }}</div>
-          <div class="stat-label">总评价数</div>
+      <!-- 历史评价 -->
+      <van-tab title="历史评价">
+        <div class="tab-content">
+          <!-- 日历组件 -->
+          <van-calendar
+            :show-title="false"
+            :poppable="false"
+            :show-confirm="false"
+            :min-date="minDate"
+            :max-date="maxDate"
+            :default-date="defaultDate"
+            :style="{ height: '300px' }"
+            @select="onDateSelect"
+            class="history-calendar"
+          >
+            <template #bottom-info="day">
+              <div v-if="hasEvaluation(day.date)" class="dot-indicator"></div>
+            </template>
+          </van-calendar>
+          
+          <!-- 选中日期的评价记录 -->
+          <div class="selected-section" v-if="selectedDate">
+            <div class="section-header">
+              <van-icon name="clock-o" />
+              <span>{{ selectedDateLabel }}的评价</span>
+            </div>
+            
+            <van-loading v-if="loadingSelected" size="24px" vertical>加载中...</van-loading>
+            
+            <div v-else-if="selectedEvaluations.length > 0" class="evaluation-list">
+              <van-cell-group inset>
+                <van-cell
+                  v-for="record in selectedEvaluations"
+                  :key="record.id"
+                  :title="getDimensionName(record.dimension_id)"
+                  :label="formatTime(record.updated_at)"
+                >
+                  <template #value>
+                    <van-rate v-if="getDimensionType(record.dimension_id) === 'star'" :model-value="Number(record.value)" readonly size="16" />
+                    <van-tag v-else type="primary">{{ record.value }}</van-tag>
+                  </template>
+                </van-cell>
+              </van-cell-group>
+            </div>
+            
+            <van-empty v-else description="当日暂无评价记录" image-size="60" />
+          </div>
         </div>
-        <div class="stat-item">
-          <div class="stat-value">{{ stats.days }}</div>
-          <div class="stat-label">评价天数</div>
-        </div>
-        <div class="stat-item">
-          <div class="stat-value">{{ stats.excellent }}</div>
-          <div class="stat-label">优秀评价</div>
-        </div>
-      </div>
-    </van-cell-group>
-    
-    <!-- 班级整体情况 -->
-    <div class="section-title" v-if="classStats.avg_rating">班级整体情况</div>
-    <van-cell-group inset v-if="classStats.avg_rating" class="class-stats">
-      <van-cell title="班级平均星级" :value="classStats.avg_rating + ' ⭐'" />
-      <van-cell title="班级总评价数" :value="classStats.total_records" />
-      <van-cell title="班级学生数" :value="classStats.total_students" />
-    </van-cell-group>
+      </van-tab>
+    </van-tabs>
     
     <!-- 我的孩子信息 -->
     <div class="my-child-info" v-if="myChildName">
@@ -76,38 +93,65 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, reactive } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { showFailToast } from 'vant'
 import { http } from '@/utils/request'
 import type { EvaluationRecord, EvaluationDimension } from '@/api/types'
 
 // 状态
-const refreshing = ref(false)
-const selectedDate = ref(new Date())
-const evaluations = ref<EvaluationRecord[]>([])
+const activeTab = ref(0)
+const loadingToday = ref(true)
+const loadingSelected = ref(false)
+const todayEvaluations = ref<EvaluationRecord[]>([])
+const selectedEvaluations = ref<EvaluationRecord[]>([])
 const dimensions = ref<EvaluationDimension[]>([])
 const evaluationDates = ref<Set<string>>(new Set())
-
-// 我的孩子信息
+const selectedDate = ref<Date | null>(null)
 const myChildName = ref('')
-const myChildId = ref('')
 
-// 班级统计
-const classStats = reactive({
-  avg_rating: null as number | null,
-  total_records: 0,
-  total_students: 0
+// 日期
+const today = new Date()
+const minDate = new Date(today.getFullYear(), today.getMonth() - 6, 1)
+const maxDate = today
+const defaultDate = today
+
+// 是否周末
+const isWeekend = computed(() => {
+  const day = today.getDay()
+  return day === 0 || day === 6
 })
 
-// 日期范围
-const minDate = new Date(2024, 0, 1)
-const maxDate = new Date()
+// 是否节假日（简化处理，实际应查询节假日API）
+const isHoliday = ref(false)
+
+// 今日标签
+const todayLabel = computed(() => {
+  const weekDays = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+  return `${today.getMonth() + 1}月${today.getDate()}日 ${weekDays[today.getDay()]}`
+})
 
 // 选中日期标签
 const selectedDateLabel = computed(() => {
+  if (!selectedDate.value) return ''
   const d = selectedDate.value
   return `${d.getMonth() + 1}月${d.getDate()}日`
 })
+
+// 格式化日期
+const formatDate = (date: Date): string => {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+// 格式化时间
+const formatTime = (time: string) => {
+  return new Date(time).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
 
 // 检查日期是否有评价
 const hasEvaluation = (date: Date) => {
@@ -121,38 +165,54 @@ const getDimensionName = (dimensionId: string) => {
   return dim?.name || '未知评价'
 }
 
-// 获取评分显示组件
-const getRatingDisplay = (eval_: EvaluationRecord) => {
-  const dim = dimensions.value.find(d => d.id === eval_.dimension_id)
-  switch (dim?.type) {
-    case 'star':
-      return 'van-rate'
-    default:
-      return 'van-tag'
-  }
-}
-
-// 格式化时间
-const formatTime = (time: string) => {
-  return new Date(time).toLocaleTimeString('zh-CN', {
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
-
-// 格式化日期
-const formatDate = (date: Date) => {
-  return date.toISOString().split('T')[0]
+// 获取维度类型
+const getDimensionType = (dimensionId: string) => {
+  const dim = dimensions.value.find(d => d.id === dimensionId)
+  return dim?.type || 'star'
 }
 
 // 日期选择
 const onDateSelect = (date: Date) => {
   selectedDate.value = date
-  loadEvaluations()
+  loadSelectedEvaluations()
 }
 
-// 加载评价记录
-const loadEvaluations = async () => {
+// 加载今日评价
+const loadTodayEvaluations = async () => {
+  loadingToday.value = true
+  
+  // 如果是周末或节假日，查找最近一个上学日
+  let queryDate = today
+  if (isWeekend.value || isHoliday.value) {
+    // 往前找最近的工作日
+    queryDate = new Date(today)
+    while (queryDate.getDay() === 0 || queryDate.getDay() === 6) {
+      queryDate.setDate(queryDate.getDate() - 1)
+    }
+  }
+  
+  const dateStr = formatDate(queryDate)
+  
+  try {
+    const res = await http.get<any>('/evaluations/my-with-class-stats', {
+      start_date: dateStr,
+      end_date: dateStr
+    })
+    
+    todayEvaluations.value = res.my_records || []
+    myChildName.value = res.my_child_name || ''
+  } catch (error) {
+    console.error('加载今日评价失败', error)
+  } finally {
+    loadingToday.value = false
+  }
+}
+
+// 加载选中日期评价
+const loadSelectedEvaluations = async () => {
+  if (!selectedDate.value) return
+  
+  loadingSelected.value = true
   const dateStr = formatDate(selectedDate.value)
   
   try {
@@ -161,131 +221,133 @@ const loadEvaluations = async () => {
       end_date: dateStr
     })
     
-    evaluations.value = res.my_records || []
-    myChildName.value = res.my_child_name || ''
-    myChildId.value = res.my_child_id || ''
-    
-    if (res.class_stats) {
-      classStats.avg_rating = res.class_stats.avg_rating
-      classStats.total_records = res.class_stats.total_records
-      classStats.total_students = res.class_stats.total_students
-    }
+    selectedEvaluations.value = res.my_records || []
   } catch (error) {
     showFailToast('加载失败')
   } finally {
-    refreshing.value = false
+    loadingSelected.value = false
   }
 }
 
-// 加载本月统计
-const loadMonthStats = async () => {
-  const now = new Date()
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1)
+// 加载评价维度
+const loadDimensions = async () => {
+  try {
+    const res = await http.get<EvaluationDimension[]>('/evaluations/dimensions')
+    dimensions.value = res
+  } catch (error) {
+    console.error('加载维度失败', error)
+  }
+}
+
+// 加载历史评价日期
+const loadEvaluationDates = async () => {
+  const startStr = formatDate(minDate)
+  const endStr = formatDate(today)
   
   try {
     const res = await http.get<any>('/evaluations/my-with-class-stats', {
-      start_date: formatDate(startOfMonth),
-      end_date: formatDate(now)
+      start_date: startStr,
+      end_date: endStr
     })
     
     const records = res.my_records || []
+    const dates = new Set<string>()
+    records.forEach((e: any) => {
+      if (e.record_date) {
+        dates.add(e.record_date)
+      }
+    })
     
-    // 统计
-    stats.total = records.length
-    
-    const uniqueDates = new Set<string>(records.map((e: any) => e.record_date))
-    stats.days = uniqueDates.size
-    evaluationDates.value = uniqueDates
-    
-    // 统计优秀评价（5星或高分）
-    stats.excellent = records.filter((e: any) => {
-      const value = parseFloat(e.value)
-      return value >= 4 || value >= 80
-    }).length
-    
-    // 更新班级统计
-    if (res.class_stats) {
-      classStats.avg_rating = res.class_stats.avg_rating
-      classStats.total_records = res.class_stats.total_records
-      classStats.total_students = res.class_stats.total_students
-    }
+    evaluationDates.value = dates
   } catch (error) {
-    console.error('加载统计失败', error)
+    console.error('加载历史评价失败', error)
   }
 }
 
-// 统计
-const stats = reactive({
-  total: 0,
-  days: 0,
-  excellent: 0
-})
-
 // 初始化
-onMounted(() => {
-  loadEvaluations()
-  loadMonthStats()
+onMounted(async () => {
+  await loadDimensions()
+  await Promise.all([
+    loadTodayEvaluations(),
+    loadEvaluationDates()
+  ])
 })
 </script>
 
 <style scoped lang="scss">
 .evaluation-calendar {
-  padding: 12px;
-  padding-bottom: 60px;
+  min-height: 100vh;
+  background: #f7f8fa;
+  padding-bottom: 70px;
   
-  .dot-indicator {
-    width: 6px;
-    height: 6px;
-    background: #3e7dc9;
-    border-radius: 50%;
-    margin: 2px auto;
+  :deep(.van-tabs__wrap) {
+    background: #fff;
   }
   
-  .section-title {
+  .tab-content {
     padding: 12px;
-    font-size: 14px;
-    font-weight: 500;
-    color: #969799;
   }
   
-  .evaluation-list {
+  .date-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    background: #fff;
+    border-radius: 8px;
     margin-bottom: 12px;
+    font-size: 15px;
+    
+    .van-icon {
+      color: #1677ff;
+    }
   }
   
-  .stats-section {
-    padding: 16px;
+  .history-calendar {
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  .selected-section {
+    margin-top: 12px;
     
-    .stats-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 12px;
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 0;
+      font-size: 15px;
+      font-weight: 500;
+      color: #333;
       
-      .stat-item {
-        text-align: center;
-        
-        .stat-value {
-          font-size: 24px;
-          font-weight: 600;
-          color: #3e7dc9;
-        }
-        
-        .stat-label {
-          font-size: 12px;
-          color: #909399;
-          margin-top: 4px;
-        }
+      .van-icon {
+        color: #1677ff;
       }
     }
   }
   
-  .class-stats {
-    margin-top: 12px;
+  .dot-indicator {
+    width: 6px;
+    height: 6px;
+    background: #1677ff;
+    border-radius: 50%;
+    margin: 2px auto 0;
+  }
+  
+  .evaluation-list {
+    margin-top: 8px;
   }
   
   .my-child-info {
-    text-align: center;
-    margin-top: 16px;
+    position: fixed;
+    bottom: 60px;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
     padding: 8px;
+    background: rgba(255, 255, 255, 0.95);
+    border-top: 1px solid #eee;
   }
 }
 </style>

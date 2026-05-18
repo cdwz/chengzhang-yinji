@@ -31,6 +31,8 @@ export function createTask(data: {
   suggested_duration?: number
   task_date: string
   task_period?: string  // day/week/month
+  weekend_required?: boolean
+  holiday_required?: boolean
   group_id?: string
   target_type?: string
   target_ids?: string[]

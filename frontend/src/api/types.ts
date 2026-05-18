@@ -92,6 +92,8 @@ export interface Task {
   suggested_duration?: number
   task_date: string
   task_period?: string  // day/week/month
+  weekend_required?: boolean
+  holiday_required?: boolean
   is_optional: boolean
   group_name?: string
   target_type: string
@@ -119,6 +121,7 @@ export interface TaskSubmission {
   submitted_at: string
   images: SubmissionImage[] | string[]
   annotations?: any[]
+  has_teacher_annotation?: boolean  // 教师是否已批改
 }
 
 export interface EvaluationDimension {

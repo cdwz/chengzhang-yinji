@@ -2,7 +2,7 @@
 成长印记 - 任务 API 路由
 """
 from typing import List, Optional
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -162,6 +162,8 @@ async def create_task(
         suggested_duration=task_data.suggested_duration,
         task_date=task_data.task_date,
         task_period=task_data.task_period or 'day',
+        weekend_required=task_data.weekend_required,
+        holiday_required=task_data.holiday_required,
         is_optional=True,  # 必须为选做
         created_by=user["id"]
     )
@@ -511,13 +513,24 @@ async def list_my_submissions(
             url = await get_file_url(img.original_url)
             image_urls.append(url)
         
+        # 检查是否有教师批注
+        from app.models import TeacherAnnotation
+        annotation_result = await db.execute(
+            select(TeacherAnnotation)
+            .join(SubmissionImage, TeacherAnnotation.image_id == SubmissionImage.id)
+            .where(SubmissionImage.submission_id == sub.id)
+            .limit(1)
+        )
+        has_annotation = annotation_result.scalar_one_or_none() is not None
+        
         response.append(TaskSubmissionResponse(
             id=sub.id,
             task_id=sub.task_id,
             student_id=sub.student_id,
             feedback=sub.feedback,
             submitted_at=sub.submitted_at,
-            images=image_urls
+            images=image_urls,
+            has_teacher_annotation=has_annotation
         ))
     
     return response
@@ -579,7 +592,7 @@ async def submit_task(
     student_id = parent_students[0].student_id
     
     # 检查是否已提交
-    existing = await db.execute(
+    existing_result = await db.execute(
         select(TaskSubmission).where(
             and_(
                 TaskSubmission.task_id == task_id,
@@ -587,10 +600,45 @@ async def submit_task(
             )
         )
     )
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="该任务已提交"
+    existing = existing_result.scalar_one_or_none()
+    
+    if existing:
+        # 检查是否已被教师批改（teacher_annotations表有记录）
+        from app.models import TeacherAnnotation, SubmissionImage
+        annotation_result = await db.execute(
+            select(TeacherAnnotation)
+            .join(SubmissionImage, TeacherAnnotation.image_id == SubmissionImage.id)
+            .where(SubmissionImage.submission_id == existing.id)
+            .limit(1)
+        )
+        has_annotation = annotation_result.scalar_one_or_none()
+        
+        if has_annotation:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="教师已批改，无法修改"
+            )
+        
+        # 未批改，允许重新提交（删除旧提交）
+        # 先删除旧的图片
+        await db.execute(
+            SubmissionImage.__table__.delete().where(
+                SubmissionImage.submission_id == existing.id
+            )
+        )
+        # 更新现有提交记录
+        existing.feedback = submission_data.feedback
+        existing.submitted_at = datetime.utcnow()
+        await db.commit()
+        await db.refresh(existing)
+        
+        return TaskSubmissionResponse(
+            id=existing.id,
+            task_id=existing.task_id,
+            student_id=existing.student_id,
+            feedback=existing.feedback,
+            submitted_at=existing.submitted_at,
+            images=[]
         )
     
     submission = TaskSubmission(

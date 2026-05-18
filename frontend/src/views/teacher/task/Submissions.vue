@@ -139,9 +139,19 @@
             :image-url="currentImages[currentImageIndex].image_url"
             :annotations="currentImageAnnotations"
             @save="handleAnnotationSave"
+            ref="annotationCanvasRef"
           />
         </div>
       </div>
+      
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="closeAnnotationDialog">取消</el-button>
+          <el-button type="primary" @click="handleCompleteClick" :loading="completing">
+            完成
+          </el-button>
+        </span>
+      </template>
     </el-dialog>
   </div>
 </template>
@@ -161,11 +171,13 @@ const taskId = route.params.taskId as string
 
 const loading = ref(false)
 const exporting = ref(false)
+const completing = ref(false)
 const task = ref<Task | null>(null)
 const submissions = ref<TaskSubmission[]>([])
 const showAnnotation = ref(false)
 const currentSubmission = ref<TaskSubmission | null>(null)
 const currentImageIndex = ref<number | null>(null)
+const annotationCanvasRef = ref<InstanceType<typeof AnnotationCanvas> | null>(null)
 
 const filters = reactive({
   status: '',
@@ -271,9 +283,40 @@ function viewAnnotations(submission: TaskSubmission) {
   showAnnotation.value = true
 }
 
-function handleAnnotationSave(_annotations: any[]) {
+function handleAnnotationSave(_annotation: any) {
   ElMessage.success('批注保存成功')
   loadSubmissions()
+}
+
+async function handleCompleteClick() {
+  if (!annotationCanvasRef.value) {
+    closeAnnotationDialog()
+    return
+  }
+  
+  completing.value = true
+  
+  try {
+    // 调用AnnotationCanvas的保存方法
+    await annotationCanvasRef.value.saveAnnotation()
+    
+    // 等待一小段时间让保存完成
+    await new Promise(resolve => setTimeout(resolve, 500))
+    
+    ElMessage.success('批注完成')
+    closeAnnotationDialog()
+  } catch (error) {
+    console.error('批注保存失败:', error)
+    ElMessage.error('批注保存失败，请重试')
+  } finally {
+    completing.value = false
+  }
+}
+
+function closeAnnotationDialog() {
+  showAnnotation.value = false
+  currentSubmission.value = null
+  currentImageIndex.value = null
 }
 
 async function exportPDF() {
@@ -376,7 +419,7 @@ async function exportPDF() {
   
   .annotation-container {
     display: flex;
-    height: 70vh;
+    height: 75vh;
     
     .image-selector {
       width: 120px;
@@ -389,7 +432,9 @@ async function exportPDF() {
         height: 100px;
         margin-bottom: 8px;
         border-radius: 4px;
-        overflow: hidden;
+        overflow: auto;
+      display: flex;
+      flex-direction: column;
         cursor: pointer;
         border: 2px solid transparent;
         
@@ -407,7 +452,9 @@ async function exportPDF() {
     
     .annotation-workspace {
       flex: 1;
-      overflow: hidden;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
     }
   }
 }

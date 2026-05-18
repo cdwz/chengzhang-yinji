@@ -214,6 +214,8 @@ class TaskCreate(BaseModel):
     suggested_duration: Optional[int] = Field(None, ge=1, le=180, description="建议时长(分钟)")
     task_date: date = Field(..., description="任务日期")
     task_period: str = Field(default='day', description="任务周期类型: day/week/month")
+    weekend_required: bool = Field(default=True, description="周末是否需要完成")
+    holiday_required: bool = Field(default=False, description="节假日是否需要完成")
 
 
 class TaskResponse(BaseModel):
@@ -224,6 +226,8 @@ class TaskResponse(BaseModel):
     suggested_duration: Optional[int] = None
     task_date: date
     task_period: str = 'day'  # 任务周期类型: day/week/month
+    weekend_required: bool = True
+    holiday_required: bool = False
     is_optional: bool = True
     group_name: Optional[str] = None
     target_type: str = 'all'
@@ -248,6 +252,7 @@ class TaskSubmissionResponse(BaseModel):
     feedback: Optional[str] = None
     submitted_at: datetime
     images: List[str] = []
+    has_teacher_annotation: bool = False  # 教师是否已批改
 
     class Config:
         from_attributes = True

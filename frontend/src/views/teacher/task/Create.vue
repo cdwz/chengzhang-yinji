@@ -99,6 +99,17 @@
           <span style="margin-left: 8px; color: #909399;">分钟</span>
         </el-form-item>
         
+        <!-- 周末/节假日选项 -->
+        <el-form-item label="周末需要完成" prop="weekend_required">
+          <el-switch v-model="form.weekend_required" />
+          <span style="margin-left: 8px; color: #909399;">默认开启，周末显示此任务</span>
+        </el-form-item>
+        
+        <el-form-item label="节假日需要完成" prop="holiday_required">
+          <el-switch v-model="form.holiday_required" />
+          <span style="margin-left: 8px; color: #909399;">默认关闭，节假日不显示此任务</span>
+        </el-form-item>
+        
         <!-- 任务周期选择 -->
         <el-form-item label="任务周期">
           <el-radio-group v-model="form.task_period" @change="onPeriodChange">
@@ -150,6 +161,18 @@
           </div>
         </el-form-item>
         
+        <!-- 周末/节假日设置 -->
+        <el-form-item label="完成时间">
+          <div class="time-options">
+            <el-checkbox v-model="form.weekend_required">周末需要完成</el-checkbox>
+            <el-checkbox v-model="form.holiday_required">节假日需要完成</el-checkbox>
+          </div>
+          <div class="time-hint">
+            <el-icon><InfoFilled /></el-icon>
+            <span>关闭后，该任务在周末/节假日将不显示在学生任务列表中</span>
+          </div>
+        </el-form-item>
+        
         <el-form-item>
           <el-alert
             title="所有任务均为【选做】，建议时长每日总计不超过60分钟"
@@ -174,6 +197,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
+import { InfoFilled } from '@element-plus/icons-vue'
 import { http } from '@/utils/request'
 import { checkCompliance } from '@/utils/compliance'
 import { createTask } from '@/api/tasks'
@@ -196,6 +220,8 @@ const form = reactive({
   suggested_duration: 30,
   task_date: new Date().toISOString().split('T')[0],
   task_period: 'day' as 'day' | 'week' | 'month',
+  weekend_required: true,
+  holiday_required: false,
   target_type: 'all' as 'all' | 'groups' | 'students',
   target_ids: [] as string[]
 })
@@ -366,6 +392,8 @@ async function handleSubmit() {
       suggested_duration: form.suggested_duration || undefined,
       task_date: form.task_date,
       task_period: form.task_period,
+      weekend_required: form.weekend_required,
+      holiday_required: form.holiday_required,
       target_type: form.target_type,
       target_ids: form.target_type !== 'all' ? form.target_ids : undefined
     })
@@ -395,6 +423,20 @@ async function handleSubmit() {
     font-size: 12px;
   }
   
+.time-options {
+  display: flex;
+  gap: 24px;
+}
+
+.time-hint {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
+}
+
   .period-hint {
     color: #409eff;
     font-size: 12px;

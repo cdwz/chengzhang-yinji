@@ -29,117 +29,124 @@
       </van-cell>
     </van-cell-group>
 
-    <!-- 照片记录 -->
-    <div class="section-title">照片记录</div>
+    <!-- 操作区域 -->
+    <div class="section-title">{{ submission ? '提交记录' : '任务上传' }}</div>
     
     <div class="image-section">
-      <!-- 主要拍照按钮（引导拍摄） -->
-      <div class="photo-actions">
-        <van-button 
-          type="primary" 
-          size="small" 
-          icon="photograph"
-          @click="openCameraGuide"
+      <!-- 教师批改状态提示 -->
+      <div v-if="submission?.has_teacher_annotation" class="annotation-notice">
+        <van-notice-bar
+          color="#1989fa"
+          background="#ecf9ff"
+          left-icon="info-o"
         >
-          引导拍照
+          教师已批改，无法修改
+        </van-notice-bar>
+      </div>
+      
+      <!-- 按钮区域 -->
+      <div class="upload-actions">
+        <!-- 未提交：显示任务上传按钮 -->
+        <van-button 
+          v-if="!submission"
+          type="primary" 
+          size="large" 
+          icon="edit"
+          @click="goToSubmit"
+          block
+        >
+          任务上传
         </van-button>
         
-        <span class="action-tip">推荐使用引导拍照，确保照片清晰</span>
+        <!-- 已提交或已批改：显示查看记录按钮 -->
+        <van-button 
+          v-else
+          type="default" 
+          size="large" 
+          icon="eye-o"
+          @click="showSubmissionDetail"
+          block
+        >
+          查看记录
+        </van-button>
+        
+        <p v-if="!submission" class="upload-tip">点击上传作业照片，支持拍照或从相册选择</p>
+        <p v-else class="upload-tip">点击查看已提交的任务记录</p>
       </div>
       
-      <!-- 已选照片预览 -->
-      <div v-if="imageList.length > 0" class="image-preview">
+      <!-- 已提交照片预览 -->
+      <div v-if="submissionImages.length > 0" class="image-preview">
+        <div class="preview-header">
+          <span>已提交照片</span>
+          <span v-if="submission?.has_teacher_annotation" class="annotation-badge">
+            <van-icon name="success" /> 已批改
+          </span>
+        </div>
         <van-grid :column-num="3" :gutter="8">
-          <van-grid-item v-for="(img, index) in imageList" :key="index">
-            <div class="image-item">
-              <van-image :src="img.url || img.content" fit="cover" />
-              <van-icon 
-                name="clear" 
-                class="delete-icon" 
-                @click="handleDeleteImage(index)"
-              />
-            </div>
+          <van-grid-item v-for="(img, index) in submissionImages" :key="index">
+            <van-image :src="img" fit="cover" @click="previewImage(img)" />
           </van-grid-item>
         </van-grid>
+      </div>
+    </div>
+    
+    <!-- 查看记录详情弹窗 -->
+    <van-popup v-model:show="showDetailPopup" position="bottom" :style="{ height: '80%' }">
+      <div class="detail-popup">
+        <van-nav-bar title="提交记录详情" left-text="关闭" @click-left="showDetailPopup = false" />
         
-        <!-- 添加更多照片 -->
-        <div v-if="imageList.length < 9" class="add-more">
-          <van-uploader
-            :show-upload="true"
-            :max-count="9 - imageList.length"
-            :max-size="10 * 1024 * 1024"
-            :after-read="handleSelectFromAlbum"
-          >
-            <van-button size="small" icon="plus">添加更多</van-button>
-          </van-uploader>
+        <div class="detail-content">
+          <div class="detail-section">
+            <div class="detail-label">提交时间</div>
+            <div class="detail-value">{{ submission ? formatTime(submission.submitted_at) : '' }}</div>
+          </div>
+          
+          <div class="detail-section" v-if="submission?.feedback">
+            <div class="detail-label">家长留言</div>
+            <div class="detail-value">{{ submission.feedback }}</div>
+          </div>
+          
+          <div class="detail-section">
+            <div class="detail-label">提交照片</div>
+            <div class="detail-images">
+              <van-image 
+                v-for="(img, index) in submissionImages" 
+                :key="index"
+                :src="img" 
+                fit="contain"
+                @click="previewImage(img)"
+              />
+            </div>
+          </div>
+          
+          <!-- 教师批注展示 -->
+          <div class="detail-section" v-if="submission?.annotations && submission.annotations.length > 0">
+            <div class="detail-label">教师批注</div>
+            <div class="annotations-list">
+              <div v-for="(annotation, index) in submission.annotations" :key="index" class="annotation-item">
+                <van-image 
+                  v-if="annotation.annotation_url" 
+                  :src="getFileUrl(annotation.annotation_url)" 
+                  fit="contain"
+                  @click="previewImage(getFileUrl(annotation.annotation_url))"
+                />
+                <div class="annotation-comment" v-if="annotation.comment">
+                  {{ annotation.comment }}
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      
-      <!-- 相册选择（备选） -->
-      <div v-if="imageList.length === 0" class="album-option">
-        <span class="option-label">或从相册选择：</span>
-        <van-uploader
-          :show-upload="true"
-          :max-count="9"
-          :max-size="10 * 1024 * 1024"
-          :after-read="handleSelectFromAlbum"
-        >
-          <van-button size="small" plain icon="photo-o">从相册选择</van-button>
-        </van-uploader>
-      </div>
-    </div>
-
-    <!-- 提交按钮 -->
-    <div class="submit-section">
-      <van-field
-        v-model="feedback"
-        rows="3"
-        autosize
-        type="textarea"
-        placeholder="可以写写孩子的学习情况（可选）"
-        show-word-limit
-        maxlength="200"
-      />
-      
-      <van-button
-        type="primary"
-        block
-        :loading="submitting"
-        :disabled="imageList.length === 0"
-        @click="handleSubmit"
-      >
-        提交记录
-      </van-button>
-    </div>
-
-    <!-- 提交历史 -->
-    <div v-if="submission" class="section-title">已提交记录</div>
-    <van-cell-group v-if="submission" inset class="submitted-images">
-      <van-grid :column-num="3" :gutter="8">
-        <van-grid-item v-for="(img, index) in submissionImages" :key="index">
-          <van-image :src="img" fit="cover" @click="previewImage(img)" />
-        </van-grid-item>
-      </van-grid>
-    </van-cell-group>
-    
-    <!-- A4 相机引导组件 -->
-    <A4CameraGuide
-      v-model:show="showCameraGuide"
-      :max-count="9 - imageList.length"
-      @capture="handleCameraCapture"
-      @error="handleCameraError"
-    />
+    </van-popup>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { showSuccessToast, showFailToast, showImagePreview, showConfirmDialog, showLoadingToast, closeToast } from 'vant'
+import { showFailToast, showImagePreview } from 'vant'
 import { http, getFileUrl } from '@/utils/request'
-import { compressImage } from '@/utils/imageCompress'
-import { detectFileTilt, type TiltResult } from '@/utils/imageTiltDetect'
-import A4CameraGuide from '@/components/A4CameraGuide.vue'
 import type { Task, TaskSubmission } from '@/api/types'
 
 const route = useRoute()
@@ -148,10 +155,7 @@ const router = useRouter()
 // 状态
 const task = ref<Task | null>(null)
 const submission = ref<TaskSubmission | null>(null)
-const imageList = ref<any[]>([])
-const feedback = ref('')
-const submitting = ref(false)
-const showCameraGuide = ref(false)
+const showDetailPopup = ref(false)
 
 // 计算属性：处理 submission.images 的类型
 const submissionImages = computed(() => {
@@ -164,6 +168,17 @@ const submissionImages = computed(() => {
   // 如果是对象数组，转换image_url
   return (images as any[]).map(img => getFileUrl(img.image_url))
 })
+
+// 跳转到提交页面
+const goToSubmit = () => {
+  const taskId = route.params.id as string
+  router.push(`/parent/tasks/${taskId}/submit`)
+}
+
+// 显示提交详情
+const showSubmissionDetail = () => {
+  showDetailPopup.value = true
+}
 
 // 加载任务详情
 const loadTask = async () => {
@@ -181,159 +196,12 @@ const loadTask = async () => {
 const loadSubmission = async () => {
   const taskId = route.params.id as string
   try {
-    const res = await http.get<TaskSubmission[]>(`/tasks/submissions`, { task_id: taskId })
+    const res = await http.get<TaskSubmission[]>(`/tasks/${taskId}/submissions`)
     if (res && res.length > 0) {
       submission.value = res[0]
     }
   } catch (error) {
-    // 暂无提交记录，忽略错误
-  }
-}
-
-// 打开相机引导
-const openCameraGuide = () => {
-  showCameraGuide.value = true
-}
-
-// 处理相机拍摄的照片
-const handleCameraCapture = (file: File) => {
-  // 照片已在 A4CameraGuide 中压缩，直接添加
-  const imageUrl = URL.createObjectURL(file)
-  imageList.value.push({
-    file,
-    url: imageUrl,
-    content: imageUrl,
-    isImage: true
-  })
-  
-  showSuccessToast('照片已添加')
-}
-
-// 处理相机错误
-const handleCameraError = (message: string) => {
-  showFailToast(message)
-}
-
-// 处理从相册选择
-const handleSelectFromAlbum = async (file: any) => {
-  if (!file || !file.file) return
-  
-  // 支持多选
-  const files = Array.isArray(file) ? file : [file]
-  
-  showLoadingToast({
-    message: '处理中...',
-    forbidClick: true,
-    duration: 0
-  })
-  
-  for (const f of files) {
-    const selectedFile = f.file as File
-    
-    try {
-      // 1. 检测倾斜
-      const result: TiltResult = await detectFileTilt(selectedFile)
-      
-      if (result.isTilted) {
-        closeToast()
-        
-        try {
-          await showConfirmDialog({
-            title: '照片倾斜提醒',
-            message: `检测到照片倾斜约 ${Math.abs(result.angle)}°，可能影响识别效果。是否重新拍摄？`,
-            confirmButtonText: '重新拍摄',
-            cancelButtonText: '继续使用'
-          })
-          // 用户选择重新拍摄，跳过这张照片
-          continue
-        } catch {
-          // 用户选择继续使用
-        }
-        
-        showLoadingToast({
-          message: '处理中...',
-          forbidClick: true,
-          duration: 0
-        })
-      }
-      
-      // 2. 压缩图片
-      const compressedFile = await compressImage(selectedFile)
-      
-      // 3. 添加到列表
-      const imageUrl = URL.createObjectURL(compressedFile)
-      imageList.value.push({
-        file: compressedFile,
-        url: imageUrl,
-        content: imageUrl,
-        isImage: true
-      })
-      
-    } catch (error) {
-      console.error('处理照片失败:', error)
-      // 压缩失败，使用原图
-      const imageUrl = URL.createObjectURL(selectedFile)
-      imageList.value.push({
-        file: selectedFile,
-        url: imageUrl,
-        content: imageUrl,
-        isImage: true
-      })
-    }
-  }
-  
-  closeToast()
-  showSuccessToast(`已添加 ${files.length} 张照片`)
-}
-
-// 删除图片
-const handleDeleteImage = (index: number) => {
-  // 释放 URL
-  const img = imageList.value[index]
-  if (img.url) {
-    URL.revokeObjectURL(img.url)
-  }
-  imageList.value.splice(index, 1)
-}
-
-// 提交记录
-const handleSubmit = async () => {
-  if (imageList.value.length === 0) {
-    showFailToast('请至少上传一张照片')
-    return
-  }
-
-  const taskId = route.params.id as string
-  submitting.value = true
-
-  showLoadingToast({
-    message: '提交中...',
-    forbidClick: true,
-    duration: 0
-  })
-
-  try {
-    // 1. 创建提交记录
-    const submitRes = await http.post<TaskSubmission>(`/tasks/${taskId}/submit`, {
-      feedback: feedback.value
-    })
-
-    // 2. 上传图片
-    for (const img of imageList.value) {
-      const formData = new FormData()
-      formData.append('file', img.file)
-      
-      await http.upload(`/tasks/submissions/${submitRes.id}/images`, formData)
-    }
-
-    closeToast()
-    showSuccessToast('提交成功')
-    router.push('/parent/tasks')
-  } catch (error: any) {
-    closeToast()
-    showFailToast(error.response?.data?.detail || '提交失败')
-  } finally {
-    submitting.value = false
+    console.error('加载提交记录失败', error)
   }
 }
 
@@ -392,75 +260,112 @@ onMounted(async () => {
     background: #fff;
     border-radius: 8px;
     
-    .photo-actions {
+    .annotation-notice {
+      margin-bottom: 12px;
+    }
+    
+    .upload-actions {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 8px;
       
-      .action-tip {
+      .upload-tip {
         font-size: 12px;
         color: #969799;
+        margin: 0;
+        margin-top: 8px;
       }
     }
     
     .image-preview {
       margin-top: 16px;
       
-      .image-item {
-        position: relative;
+      .preview-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 14px;
+        font-weight: 500;
+        margin-bottom: 12px;
+        color: #333;
         
-        .delete-icon {
-          position: absolute;
-          top: -6px;
-          right: -6px;
-          font-size: 20px;
-          color: #ee0a24;
-          background: #fff;
-          border-radius: 50%;
+        .annotation-badge {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 12px;
+          color: #07c160;
         }
       }
-      
-      .add-more {
-        margin-top: 12px;
-        display: flex;
-        justify-content: center;
-      }
     }
-    
-    .album-option {
-      margin-top: 16px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 12px;
-      
-      .option-label {
-        font-size: 13px;
-        color: #969799;
-      }
-    }
-  }
-  
-  .submit-section {
-    margin-top: 12px;
-    padding: 12px;
-    background: #fff;
-    border-radius: 8px;
-    
-    .van-button {
-      margin-top: 12px;
-    }
-  }
-  
-  .submitted-images {
-    padding: 12px;
   }
   
   .feedback-text {
     margin-top: 4px;
     line-height: 1.5;
     color: #606266;
+  }
+}
+
+.detail-popup {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  
+  .detail-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+  }
+  
+  .detail-section {
+    margin-bottom: 20px;
+    
+    .detail-label {
+      font-size: 14px;
+      color: #969799;
+      margin-bottom: 8px;
+    }
+    
+    .detail-value {
+      font-size: 15px;
+      color: #333;
+      line-height: 1.6;
+    }
+    
+    .detail-images {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      
+      .van-image {
+        width: calc(50% - 4px);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+    }
+  }
+  
+  .annotations-list {
+    .annotation-item {
+      margin-bottom: 16px;
+      
+      .van-image {
+        width: 100%;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      
+      .annotation-comment {
+        margin-top: 8px;
+        padding: 12px;
+        background: #f7f8fa;
+        border-radius: 8px;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+    }
   }
 }
 </style>

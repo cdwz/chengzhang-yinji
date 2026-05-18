@@ -81,7 +81,7 @@
                   {{ detectionResults.text.pass ? '✓ 包含文字' : '✗ 无文字内容' }}
                 </div>
                 <div class="result-tag" :class="detectionResults.material.pass ? 'pass' : 'fail'">
-                  {{ detectionResults.material.value === 1 ? '✓ 学习资料' : detectionResults.material.value === 0 ? '✗ 非学习资料' : '✓ 其他内容' }}
+                  {{ detectionResults.material.pass ? '✓ 学习资料' : '✗ 非学习资料' }}
                 </div>
               </div>
             </div>
@@ -177,14 +177,11 @@ const allPassed = computed(() => {
 
 const problemMessage = computed(() => {
   const problems: string[] = []
-  if (!detectionResults.value.clarity.pass) problems.push('照片模糊（清晰度不足）')
-  if (!detectionResults.value.angle.pass) problems.push(`照片歪斜 ${detectionResults.value.angle.value.toFixed(1)}°（超过10°）`)
-  if (!detectionResults.value.text.pass) problems.push('未检测到文字或图形内容')
-  if (!detectionResults.value.material.pass) problems.push('可能不是学习资料（白色占比低或颜色种类多）')
-  
-  if (problems.length === 0) return ''
-  
-  return '检测到以下问题：\n' + problems.map(p => '• ' + p).join('\n') + '\n\n是否继续使用此照片？'
+  if (!detectionResults.value.clarity.pass) problems.push('照片模糊')
+  if (!detectionResults.value.angle.pass) problems.push(`照片歪斜 ${detectionResults.value.angle.value.toFixed(1)}°`)
+  if (!detectionResults.value.text.pass) problems.push('未检测到文字内容')
+  if (!detectionResults.value.material.pass) problems.push('可能不是学习资料')
+  return '检测到以下问题：' + problems.join('、') + '。是否继续使用？'
 })
 
 function resetState() {
@@ -271,7 +268,7 @@ function onPreviewLoad() {
   setTimeout(() => runAllDetections(), 500)
 }
 
-// 执行四项检测（按顺序执行）
+// 执行四项检测
 async function runAllDetections() {
   if (!previewImageRef.value) return
   
@@ -283,42 +280,34 @@ async function runAllDetections() {
   canvas.height = img.naturalHeight
   ctx?.drawImage(img, 0, 0)
   
-  console.log('=== 开始四项检测（按顺序执行）===')
+  console.log('=== 开始四项检测 ===')
   
-  // 检测1：清晰度 - 拉普拉斯方差，阈值100，低于为模糊
-  console.log('【检测1】清晰度检测...')
+  // 检测1：清晰度
   const clarityResult = detectClarity(canvas)
   detectionResults.value.clarity = clarityResult
-  console.log('清晰度结果:', clarityResult)
+  console.log('检测1-清晰度:', clarityResult)
   
-  // 检测2：拍摄角度 - Canny边缘 + 霍夫变换找直线，>10度为歪斜
-  console.log('【检测2】拍摄角度检测...')
+  // 检测2：角度
   const angleResult = detectAngle(canvas)
   detectionResults.value.angle = angleResult
-  console.log('角度结果:', angleResult)
+  console.log('检测2-角度:', angleResult)
   
-  // 检测3：是否包含文字或图形 - 滑动窗口扫描高对比度区域，>10个认为包含文字
-  console.log('【检测3】文字/图形检测...')
+  // 检测3：文字内容
   const textResult = detectTextContent(canvas)
   detectionResults.value.text = textResult
-  console.log('文字检测结果:', textResult)
+  console.log('检测3-文字:', textResult)
   
-  // 检测4：是否为学习资料 - 白色区域占比>25%且颜色种类<15 → 学习资料，白色占比<15%或颜色种类>25 → 非学习资料
-  console.log('【检测4】学习资料检测...')
+  // 检测4：学习资料
   const materialResult = detectLearningMaterial(canvas)
   detectionResults.value.material = materialResult
-  console.log('学习资料检测结果:', materialResult)
+  console.log('检测4-学习资料:', materialResult)
   
   detecting.value = false
   detectionCompleted.value = true
   
-  console.log('=== 检测完成 ===')
-  console.log('综合判定:', allPassed.value ? '✅ 四项全通过' : '❌ 有未通过项')
-  console.log('详细结果:', detectionResults.value)
+  console.log('=== 检测完成 ===', detectionResults.value)
   
-  // 综合判定
-  // 四项全通过 → 绿色标签"检测通过"
-  // 任一项不通过 → 红色标签 + 弹窗列出问题，可选"重拍"或"继续使用"
+  // 如果有问题，显示弹窗
   if (!allPassed.value) {
     showProblemDialog.value = true
   }
@@ -364,167 +353,126 @@ function detectClarity(canvas: HTMLCanvasElement): { pass: boolean; value: numbe
   return { pass, value: variance }
 }
 
-// 检测2：拍摄角度 - Canny边缘 + 霍夫变换找直线
+// 检测2：角度（霍夫变换简化版）
 function detectAngle(canvas: HTMLCanvasElement): { pass: boolean; value: number } {
   const ctx = canvas.getContext('2d')
   if (!ctx) return { pass: true, value: 0 }
   
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const data = imageData.data
   const width = canvas.width
   const height = canvas.height
   
-  // 1. 转灰度
-  const imageData = ctx.getImageData(0, 0, width, height)
-  const data = imageData.data
+  // 转灰度
   const gray: number[] = []
   for (let i = 0; i < data.length; i += 4) {
     gray.push(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2])
   }
   
-  // 2. Canny边缘检测简化版
+  // 简化边缘检测
   const edges: number[][] = []
-  const edgeThreshold = 100
-  
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      // Sobel算子
+  for (let y = 1; y < height - 1; y += 2) {
+    for (let x = 1; x < width - 1; x += 2) {
       const gx = gray[(y-1)*width + (x+1)] - gray[(y-1)*width + (x-1)] +
                  2*(gray[y*width + (x+1)] - gray[y*width + (x-1)]) +
                  gray[(y+1)*width + (x+1)] - gray[(y+1)*width + (x-1)]
       const gy = gray[(y+1)*width + (x-1)] - gray[(y-1)*width + (x-1)] +
                  2*(gray[(y+1)*width + x] - gray[(y-1)*width + x]) +
                  gray[(y+1)*width + (x+1)] - gray[(y-1)*width + (x+1)]
-      
-      const gradient = Math.sqrt(gx*gx + gy*gy)
-      if (gradient > edgeThreshold) {
+      const edge = Math.sqrt(gx*gx + gy*gy)
+      if (edge > 100) {
         edges.push([x, y])
       }
     }
   }
   
-  if (edges.length < 50) return { pass: true, value: 0 }
+  if (edges.length < 10) return { pass: true, value: 0 }
   
-  // 3. 霍夫变换找最长直线
-  const houghSpace: {[key: string]: number} = {}
-  const angleBins = 180 // 0-179度
-  
-  // 采样部分边缘点
-  const sampleSize = Math.min(500, edges.length)
-  for (let i = 0; i < sampleSize; i++) {
-    const [x, y] = edges[Math.floor(Math.random() * edges.length)]
-    
-    for (let thetaDeg = 0; thetaDeg < angleBins; thetaDeg += 5) {
-      const theta = thetaDeg * Math.PI / 180
-      const rho = x * Math.cos(theta) + y * Math.sin(theta)
-      
-      if (rho >= 0) {
-        const key = `${Math.round(thetaDeg)}_${Math.round(rho)}`
-        houghSpace[key] = (houghSpace[key] || 0) + 1
+  // 简化霍夫变换：找最长近似水平线
+  let maxAngle = 0
+  for (let i = 0; i < Math.min(100, edges.length); i++) {
+    for (let j = i + 1; j < Math.min(100, edges.length); j++) {
+      const [x1, y1] = edges[i]
+      const [x2, y2] = edges[j]
+      if (Math.abs(x2 - x1) > 50) {
+        const angle = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI
+        if (Math.abs(angle) > Math.abs(maxAngle) && Math.abs(angle) < 45) {
+          maxAngle = angle
+        }
       }
     }
   }
   
-  // 4. 找到投票最多的直线
-  let maxVotes = 0
-  let bestAngle = 0
-  
-  Object.entries(houghSpace).forEach(([key, votes]) => {
-    if (votes > maxVotes) {
-      maxVotes = votes
-      const [thetaStr] = key.split('_')
-      bestAngle = parseInt(thetaStr)
-    }
-  })
-  
-  // 5. 转换为水平线角度（0-90度）
-  let angleToHorizontal = bestAngle
-  if (angleToHorizontal > 90) angleToHorizontal = 180 - angleToHorizontal
-  if (angleToHorizontal > 45) angleToHorizontal = 90 - angleToHorizontal
-  
-  // 6. 判断是否歪斜（>10度为歪斜）
-  const pass = angleToHorizontal <= 10
-  return { pass, value: angleToHorizontal }
+  const pass = Math.abs(maxAngle) <= 10
+  return { pass, value: maxAngle }
 }
 
-// 检测3：是否包含文字或图形 - 滑动窗口扫描高对比度区域
+// 检测3：文字内容（滑动窗口扫描）
 function detectTextContent(canvas: HTMLCanvasElement): { pass: boolean; value: number } {
   const ctx = canvas.getContext('2d')
   if (!ctx) return { pass: true, value: 0 }
   
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const data = imageData.data
   const width = canvas.width
   const height = canvas.height
   
-  // 1. 转灰度
-  const imageData = ctx.getImageData(0, 0, width, height)
-  const data = imageData.data
+  // 转灰度
   const gray: number[] = []
   for (let i = 0; i < data.length; i += 4) {
     gray.push(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2])
   }
   
-  // 2. 滑动窗口扫描（32x32像素窗口）
-  const windowSize = 32
-  const step = windowSize / 2 // 50%重叠
+  // 滑动窗口检测文字区域
+  const windowSize = 16
   let textRegions = 0
   
-  for (let by = 0; by < height - windowSize; by += step) {
-    for (let bx = 0; bx < width - windowSize; bx += step) {
-      // 统计窗口内的像素值
-      let minVal = 255
-      let maxVal = 0
-      let sumVal = 0
+  for (let by = 0; by < height - windowSize; by += windowSize / 2) {
+    for (let bx = 0; bx < width - windowSize; bx += windowSize / 2) {
+      let darkCount = 0
+      let lightCount = 0
+      let edgeCount = 0
       
       for (let y = by; y < by + windowSize; y++) {
         for (let x = bx; x < bx + windowSize; x++) {
           const val = gray[y * width + x]
-          if (val < minVal) minVal = val
-          if (val > maxVal) maxVal = val
-          sumVal += val
+          if (val < 80) darkCount++
+          else if (val > 200) lightCount++
+          
+          // 边缘检测
+          if (x > 0 && x < width - 1) {
+            const diff = Math.abs(gray[y * width + x] - gray[y * width + x + 1])
+            if (diff > 50) edgeCount++
+          }
         }
       }
       
-      const contrast = maxVal - minVal // 对比度
-      const avgBrightness = sumVal / (windowSize * windowSize) // 平均亮度
+      // 文字特征：深色文字+浅色背景+明显边缘
+      const total = windowSize * windowSize
+      const darkRatio = darkCount / total
+      const lightRatio = lightCount / total
+      const edgeRatio = edgeCount / total
       
-      // 3. 判断是否为疑似文字/图形区域
-      // 高对比度（>100）且亮度适中（50-200）的区域
-      if (contrast > 100 && avgBrightness > 50 && avgBrightness < 200) {
-        // 进一步检查边缘密度
-        let edgeCount = 0
-        for (let y = by + 1; y < by + windowSize - 1; y += 2) {
-          for (let x = bx + 1; x < bx + windowSize - 1; x += 2) {
-            const gradient = Math.abs(gray[y * width + x] - gray[y * width + (x + 1)]) +
-                            Math.abs(gray[y * width + x] - gray[(y + 1) * width + x])
-            if (gradient > 30) edgeCount++
-          }
-        }
-        
-        const edgeDensity = edgeCount / ((windowSize/2) * (windowSize/2))
-        if (edgeDensity > 0.1) {
-          textRegions++
-        }
+      if (darkRatio > 0.1 && lightRatio > 0.3 && edgeRatio > 0.05) {
+        textRegions++
       }
     }
   }
   
-  // 4. 统计疑似文字区域数量，>10个认为包含文字
   const pass = textRegions >= 10
   return { pass, value: textRegions }
 }
 
-// 检测4：是否为学习资料
+// 检测4：学习资料判断
 function detectLearningMaterial(canvas: HTMLCanvasElement): { pass: boolean; value: number; whiteRatio: number; colorCount: number } {
   const ctx = canvas.getContext('2d')
   if (!ctx) return { pass: true, value: 0, whiteRatio: 0, colorCount: 0 }
   
-  const width = canvas.width
-  const height = canvas.height
-  
-  // 1. 获取图像数据
-  const imageData = ctx.getImageData(0, 0, width, height)
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
   const data = imageData.data
-  const totalPixels = width * height
+  const totalPixels = data.length / 4
   
-  // 2. 统计白色像素（亮度>200）
+  // 统计白色像素和颜色种类
   let whitePixels = 0
   const colorMap = new Map<string, number>()
   
@@ -533,46 +481,25 @@ function detectLearningMaterial(canvas: HTMLCanvasElement): { pass: boolean; val
     const g = data[i + 1]
     const b = data[i + 2]
     
-    // 白色像素检测（亮度>200）
-    const brightness = 0.299 * r + 0.587 * g + 0.114 * b
-    if (brightness > 200) whitePixels++
+    // 白色检测
+    if (r > 200 && g > 200 && b > 200) whitePixels++
     
-    // 颜色种类统计（量化到16色减少误差）
-    const rq = Math.floor(r / 16) // 0-15
-    const gq = Math.floor(g / 16) // 0-15
-    const bq = Math.floor(b / 16) // 0-15
-    const colorKey = `${rq}-${gq}-${bq}`
+    // 颜色种类（量化到32级减少误差）
+    const colorKey = `${Math.floor(r/32)}-${Math.floor(g/32)}-${Math.floor(b/32)}`
     colorMap.set(colorKey, (colorMap.get(colorKey) || 0) + 1)
   }
   
   const whiteRatio = whitePixels / totalPixels
   const colorCount = colorMap.size
   
-  console.log(`白色占比: ${(whiteRatio * 100).toFixed(1)}%, 颜色种类: ${colorCount}`)
-  
-  // 3. 判断标准（按照要求）
+  // 判断标准
   // 学习资料：白色占比 > 25% 且 颜色种类 < 15
   // 非学习资料：白色占比 < 15% 或 颜色种类 > 25
-  // 其他情况通过
+  const isNotLearningMaterial = (whiteRatio < 0.15 || colorCount > 25)
   
-  let pass = true
-  let value = 1 // 1=学习资料，0=非学习资料，2=其他情况
+  const pass = !isNotLearningMaterial
   
-  if (whiteRatio > 0.25 && colorCount < 15) {
-    // 学习资料特征
-    pass = true
-    value = 1
-  } else if (whiteRatio < 0.15 || colorCount > 25) {
-    // 非学习资料特征
-    pass = false
-    value = 0
-  } else {
-    // 其他情况（通过）
-    pass = true
-    value = 2
-  }
-  
-  return { pass, value, whiteRatio, colorCount }
+  return { pass, value: pass ? 1 : 0, whiteRatio, colorCount }
 }
 
 function handleConfirmClick() {

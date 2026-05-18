@@ -1,121 +1,111 @@
 <template>
   <div class="annotation-canvas">
     <!-- 工具栏 -->
-    <div class="toolbar" v-if="editable">
-      <el-button-group>
-        <el-button 
-          :type="currentTool === 'select' ? 'primary' : 'default'"
-          @click="setTool('select')"
-        >
-          <el-icon><Pointer /></el-icon> 选择
-        </el-button>
-        <el-button 
+    <div class="toolbar">
+      <div class="tool-group">
+        <van-button 
           :type="currentTool === 'pencil' ? 'primary' : 'default'"
+          size="small"
           @click="setTool('pencil')"
         >
-          <el-icon><Edit /></el-icon> 画笔
-        </el-button>
-        <el-button 
+          <van-icon name="edit" /> 画笔
+        </van-button>
+        <van-button 
           :type="currentTool === 'arrow' ? 'primary' : 'default'"
+          size="small"
           @click="setTool('arrow')"
         >
-          <el-icon><TopRight /></el-icon> 箭头
-        </el-button>
-        <el-button 
+          <van-icon name="share" /> 箭头
+        </van-button>
+        <van-button 
           :type="currentTool === 'circle' ? 'primary' : 'default'"
+          size="small"
           @click="setTool('circle')"
         >
-          <el-icon><CircleCheck /></el-icon> 圆圈
-        </el-button>
-        <el-button 
+          <van-icon name="circle" /> 圆圈
+        </van-button>
+        <van-button 
           :type="currentTool === 'text' ? 'primary' : 'default'"
+          size="small"
           @click="setTool('text')"
         >
-          <el-icon><ChatDotSquare /></el-icon> 文字
-        </el-button>
-      </el-button-group>
-      
-      <div class="tool-options" v-if="currentTool === 'pencil'">
-        <el-color-picker v-model="brushColor" size="small" />
-        <el-slider v-model="brushWidth" :min="1" :max="20" :show-tooltip="false" style="width: 100px" />
+          <van-icon name="comment-o" /> 文字
+        </van-button>
       </div>
       
-      <el-button-group>
-        <el-button @click="undo" :disabled="!canUndo">
-          <el-icon><RefreshLeft /></el-icon> 撤销
-        </el-button>
-        <el-button @click="clearCanvas" type="danger">
-          <el-icon><Delete /></el-icon> 清空
-        </el-button>
-      </el-button-group>
+      <div class="tool-options" v-if="currentTool === 'pencil'">
+        <span>颜色:</span>
+        <input type="color" v-model="brushColor" />
+        <span>粗细:</span>
+        <van-slider v-model="brushWidth" :min="1" :max="10" style="width: 80px" />
+      </div>
+      
+      <div class="tool-group">
+        <van-button size="small" @click="undo" :disabled="history.length === 0">
+          <van-icon name="replay" /> 撤销
+        </van-button>
+        <van-button size="small" type="danger" @click="clearCanvas">
+          <van-icon name="delete-o" /> 清空
+        </van-button>
+      </div>
     </div>
     
     <!-- 画布容器 -->
     <div class="canvas-container" ref="containerRef">
-      <canvas ref="canvasRef"></canvas>
-      <!-- 图片层 -->
       <img 
         v-if="imageUrl" 
         :src="imageUrl" 
         class="background-image"
         @load="initCanvas"
         ref="imageRef"
+        crossorigin="anonymous"
       />
+      <canvas 
+        ref="canvasRef" 
+        class="drawing-canvas"
+        @mousedown="startDrawing"
+        @mousemove="draw"
+        @mouseup="stopDrawing"
+        @touchstart="startDrawing"
+        @touchmove="draw"
+        @touchend="stopDrawing"
+      ></canvas>
     </div>
     
     <!-- 操作按钮 -->
-    <div class="actions" v-if="editable">
-      <el-button @click="$emit('cancel')">取消</el-button>
-      <el-button type="primary" @click="saveAnnotation">保存批注</el-button>
+    <div class="actions">
+      <van-button @click="$emit('cancel')">取消</van-button>
+      <van-button type="primary" @click="saveAnnotation" :loading="saving">保存批注</van-button>
     </div>
     
-    <!-- 查看模式显示批注列表 -->
-    <div class="annotations-list" v-if="!editable && annotations.length > 0">
-      <h4>批注记录</h4>
-      <div 
-        v-for="annotation in annotations" 
-        :key="annotation.id"
-        class="annotation-item"
-        :class="{ 'is-example': annotation.is_example }"
-      >
-        <div class="annotation-info">
-          <span class="teacher">{{ annotation.teacher_name }}</span>
-          <span class="time">{{ formatTime(annotation.created_at) }}</span>
-          <el-tag v-if="annotation.is_example" type="success" size="small">典型例</el-tag>
-        </div>
-        <div class="annotation-actions">
-          <el-button size="small" @click="viewAnnotation(annotation)">查看</el-button>
-          <el-button 
-            v-if="canSetExample" 
-            size="small" 
-            :type="annotation.is_example ? 'warning' : 'success'"
-            @click="toggleExample(annotation)"
-          >
-            {{ annotation.is_example ? '取消典型' : '设为典型' }}
-          </el-button>
-        </div>
-      </div>
-    </div>
+    <!-- 文字输入弹窗 -->
+    <van-dialog 
+      v-model:show="showTextDialog" 
+      title="添加文字" 
+      show-cancel-button
+      @confirm="addText"
+    >
+      <van-field v-model="textInput" placeholder="请输入文字" />
+    </van-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, computed } from 'vue'
-import { Pointer, Edit, TopRight, CircleCheck, ChatDotSquare, RefreshLeft, Delete } from '@element-plus/icons-vue'
-import * as fabric from 'fabric'
-import { createAnnotation, setAsExample, getImageAnnotations } from '@/api/annotations'
-import type { Annotation, AnnotationData } from '@/api/annotations'
-import { ElMessage } from 'element-plus'
+import { ref, onMounted } from 'vue'
+import { showToast, showSuccessToast } from 'vant'
+import { createAnnotation } from '@/api/annotations'
+import type { Annotation } from '@/api/annotations'
 
 const props = defineProps<{
   imageId: string
   imageUrl: string
   editable?: boolean
   canSetExample?: boolean
+  annotations?: Annotation[]
 }>()
 
 const emit = defineEmits<{
-  (e: 'saved', annotation: Annotation): void
+  (e: 'save', annotation: Annotation): void
   (e: 'cancel'): void
 }>()
 
@@ -125,183 +115,207 @@ const canvasRef = ref<HTMLCanvasElement>()
 const imageRef = ref<HTMLImageElement>()
 
 // state
-const canvas = ref<fabric.Canvas>()
-const currentTool = ref('select')
+const ctx = ref<CanvasRenderingContext2D | null>(null)
+const currentTool = ref('pencil')
 const brushColor = ref('#ff0000')
 const brushWidth = ref(3)
-const annotations = ref<Annotation[]>([])
-const history = ref<any[]>([])
-
-const canUndo = computed(() => history.value.length > 0)
+const isDrawing = ref(false)
+const history = ref<ImageData[]>([])
+const startPoint = ref({ x: 0, y: 0 })
+const showTextDialog = ref(false)
+const textInput = ref('')
+const textPosition = ref({ x: 0, y: 0 })
+const canvasSize = ref({ width: 800, height: 600 })
 
 // 初始化画布
 function initCanvas() {
-  if (!canvasRef.value || !imageRef.value) return
+  if (!canvasRef.value || !imageRef.value || !containerRef.value) return
   
   const img = imageRef.value
-  const width = img.naturalWidth
-  const height = img.naturalHeight
+  const container = containerRef.value
   
-  // 创建 Fabric 画布
-  canvas.value = new fabric.Canvas(canvasRef.value, {
-    width: Math.min(width, 800),
-    height: Math.min(height, 600),
-    selection: true
-  })
+  // 计算合适的画布尺寸
+  const maxWidth = container.clientWidth - 20
+  const maxHeight = 500
   
-  // 设置背景图片
-  fabric.Image.fromURL(props.imageUrl, (img) => {
-    canvas.value?.setBackgroundImage(img, () => {
-      canvas.value?.renderAll()
-    }, {
-      scaleX: canvas.value!.width! / (img.width || 1),
-      scaleY: canvas.value!.height! / (img.height || 1)
-    })
-  })
+  let width = img.naturalWidth
+  let height = img.naturalHeight
   
-  // 设置自由绘制
-  canvas.value.freeDrawingBrush = new fabric.PencilBrush(canvas.value)
-  canvas.value.freeDrawingBrush.color = brushColor.value
-  canvas.value.freeDrawingBrush.width = brushWidth.value
+  // 缩放以适应容器
+  if (width > maxWidth) {
+    const ratio = maxWidth / width
+    width = maxWidth
+    height = height * ratio
+  }
+  if (height > maxHeight) {
+    const ratio = maxHeight / height
+    height = maxHeight
+    width = width * ratio
+  }
   
-  // 监听对象添加
-  canvas.value.on('object:added', () => {
-    saveHistory()
-  })
+  canvasSize.value = { width, height }
   
-  // 加载已有批注
-  loadAnnotations()
+  const canvas = canvasRef.value
+  canvas.width = width
+  canvas.height = height
+  
+  const context = canvas.getContext('2d')
+  if (!context) return
+  
+  ctx.value = context
+  
+  // 绘制背景图片
+  context.drawImage(img, 0, 0, width, height)
+  
+  // 保存初始状态
+  saveHistory()
+  
+  console.log('画布初始化完成:', { width, height })
 }
 
 // 设置工具
 function setTool(tool: string) {
   currentTool.value = tool
-  if (!canvas.value) return
+}
+
+// 获取触摸/鼠标坐标
+function getPoint(e: MouseEvent | TouchEvent): { x: number; y: number } {
+  if (!canvasRef.value) return { x: 0, y: 0 }
   
-  switch (tool) {
-    case 'select':
-      canvas.value.isDrawingMode = false
-      canvas.value.selection = true
-      break
-    case 'pencil':
-      canvas.value.isDrawingMode = true
-      canvas.value.freeDrawingBrush.color = brushColor.value
-      canvas.value.freeDrawingBrush.width = brushWidth.value
-      break
-    case 'arrow':
-      canvas.value.isDrawingMode = false
-      canvas.value.selection = false
-      enableArrowDrawing()
-      break
-    case 'circle':
-      canvas.value.isDrawingMode = false
-      canvas.value.selection = false
-      enableCircleDrawing()
-      break
-    case 'text':
-      canvas.value.isDrawingMode = false
-      canvas.value.selection = false
-      enableTextAdding()
-      break
+  const rect = canvasRef.value.getBoundingClientRect()
+  
+  if ('touches' in e) {
+    return {
+      x: e.touches[0].clientX - rect.left,
+      y: e.touches[0].clientY - rect.top
+    }
+  }
+  
+  return {
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top
   }
 }
 
-// 启用箭头绘制
-function enableArrowDrawing() {
-  let startPoint: fabric.Point | null = null
+// 开始绘制
+function startDrawing(e: MouseEvent | TouchEvent) {
+  e.preventDefault()
   
-  canvas.value?.on('mouse:down', (opt) => {
-    startPoint = canvas.value!.getPointer(opt.e)
-  })
+  if (!ctx.value) return
   
-  canvas.value?.on('mouse:up', (opt) => {
-    if (!startPoint) return
-    const endPoint = canvas.value!.getPointer(opt.e)
-    
-    // 创建箭头
-    const line = new fabric.Line([
-      startPoint.x, startPoint.y,
-      endPoint.x, endPoint.y
-    ], {
-      stroke: '#ff0000',
-      strokeWidth: 3
-    })
-    
-    // 箭头头部
-    const angle = Math.atan2(endPoint.y - startPoint.y, endPoint.x - startPoint.x)
-    const arrowHead = new fabric.Triangle({
-      left: endPoint.x,
-      top: endPoint.y,
-      width: 15,
-      height: 15,
-      fill: '#ff0000',
-      angle: (angle * 180 / Math.PI) + 90
-    })
-    
-    const group = new fabric.Group([line, arrowHead])
-    canvas.value?.add(group)
-    
-    startPoint = null
-  })
+  const point = getPoint(e)
+  startPoint.value = point
+  isDrawing.value = true
+  
+  if (currentTool.value === 'pencil') {
+    ctx.value.beginPath()
+    ctx.value.moveTo(point.x, point.y)
+  } else if (currentTool.value === 'text') {
+    textPosition.value = point
+    showTextDialog.value = true
+    isDrawing.value = false
+  }
 }
 
-// 启用圆圈绘制
-function enableCircleDrawing() {
-  let startPoint: fabric.Point | null = null
+// 绘制中
+function draw(e: MouseEvent | TouchEvent) {
+  e.preventDefault()
   
-  canvas.value?.on('mouse:down', (opt) => {
-    startPoint = canvas.value!.getPointer(opt.e)
-  })
+  if (!isDrawing.value || !ctx.value) return
   
-  canvas.value?.on('mouse:up', (opt) => {
-    if (!startPoint) return
-    const endPoint = canvas.value!.getPointer(opt.e)
-    
-    const radius = Math.sqrt(
-      Math.pow(endPoint.x - startPoint.x, 2) +
-      Math.pow(endPoint.y - startPoint.y, 2)
-    )
-    
-    const circle = new fabric.Circle({
-      left: startPoint.x - radius,
-      top: startPoint.y - radius,
-      radius: radius,
-      fill: 'transparent',
-      stroke: '#ff0000',
-      strokeWidth: 3
-    })
-    
-    canvas.value?.add(circle)
-    startPoint = null
-  })
+  const point = getPoint(e)
+  
+  if (currentTool.value === 'pencil') {
+    ctx.value.lineTo(point.x, point.y)
+    ctx.value.strokeStyle = brushColor.value
+    ctx.value.lineWidth = brushWidth.value
+    ctx.value.lineCap = 'round'
+    ctx.value.lineJoin = 'round'
+    ctx.value.stroke()
+  }
 }
 
-// 启用文字添加
-function enableTextAdding() {
-  canvas.value?.on('mouse:up', (opt) => {
-    const pointer = canvas.value!.getPointer(opt.e)
-    
-    const text = new fabric.IText('点击输入文字', {
-      left: pointer.x,
-      top: pointer.y,
-      fontSize: 16,
-      fill: '#ff0000'
-    })
-    
-    canvas.value?.add(text)
-    canvas.value?.setActiveObject(text)
-    text.enterEditing()
-    
-    // 移除监听，避免重复添加
-    canvas.value?.off('mouse:up')
-    setTool('select')
-  })
+// 结束绘制
+function stopDrawing(e: MouseEvent | TouchEvent) {
+  if (!isDrawing.value || !ctx.value) return
+  
+  const point = getPoint(e)
+  
+  if (currentTool.value === 'arrow') {
+    drawArrow(startPoint.value, point)
+  } else if (currentTool.value === 'circle') {
+    drawCircle(startPoint.value, point)
+  }
+  
+  isDrawing.value = false
+  saveHistory()
+}
+
+// 绘制箭头
+function drawArrow(start: { x: number; y: number }, end: { x: number; y: number }) {
+  if (!ctx.value) return
+  
+  const headLength = 15
+  const angle = Math.atan2(end.y - start.y, end.x - start.x)
+  
+  ctx.value.beginPath()
+  ctx.value.moveTo(start.x, start.y)
+  ctx.value.lineTo(end.x, end.y)
+  ctx.value.strokeStyle = '#ff0000'
+  ctx.value.lineWidth = 3
+  ctx.value.stroke()
+  
+  // 箭头头部
+  ctx.value.beginPath()
+  ctx.value.moveTo(end.x, end.y)
+  ctx.value.lineTo(
+    end.x - headLength * Math.cos(angle - Math.PI / 6),
+    end.y - headLength * Math.sin(angle - Math.PI / 6)
+  )
+  ctx.value.lineTo(
+    end.x - headLength * Math.cos(angle + Math.PI / 6),
+    end.y - headLength * Math.sin(angle + Math.PI / 6)
+  )
+  ctx.value.closePath()
+  ctx.value.fillStyle = '#ff0000'
+  ctx.value.fill()
+}
+
+// 绘制圆圈
+function drawCircle(start: { x: number; y: number }, end: { x: number; y: number }) {
+  if (!ctx.value) return
+  
+  const radius = Math.sqrt(
+    Math.pow(end.x - start.x, 2) + Math.pow(end.y - start.y, 2)
+  )
+  
+  ctx.value.beginPath()
+  ctx.value.arc(start.x, start.y, radius, 0, 2 * Math.PI)
+  ctx.value.strokeStyle = '#ff0000'
+  ctx.value.lineWidth = 3
+  ctx.value.stroke()
+}
+
+// 添加文字
+function addText() {
+  if (!ctx.value || !textInput.value) return
+  
+  ctx.value.font = '16px sans-serif'
+  ctx.value.fillStyle = '#ff0000'
+  ctx.value.fillText(textInput.value, textPosition.value.x, textPosition.value.y)
+  
+  textInput.value = ''
+  saveHistory()
 }
 
 // 保存历史
 function saveHistory() {
-  const json = canvas.value?.toJSON()
-  history.value.push(json)
+  if (!ctx.value || !canvasRef.value) return
+  
+  const imageData = ctx.value.getImageData(0, 0, canvasRef.value.width, canvasRef.value.height)
+  history.value.push(imageData)
+  
+  // 限制历史记录数量
   if (history.value.length > 20) {
     history.value.shift()
   }
@@ -309,109 +323,68 @@ function saveHistory() {
 
 // 撤销
 function undo() {
-  if (history.value.length === 0 || !canvas.value) return
+  if (history.value.length <= 1 || !ctx.value || !canvasRef.value) return
   
   history.value.pop()
   const previousState = history.value[history.value.length - 1]
   
   if (previousState) {
-    canvas.value.loadFromJSON(previousState, () => {
-      canvas.value?.renderAll()
-    })
+    ctx.value.putImageData(previousState, 0, 0)
   }
 }
 
 // 清空画布
 function clearCanvas() {
-  if (!canvas.value) return
+  if (!ctx.value || !canvasRef.value || !imageRef.value) return
   
-  canvas.value.getObjects().forEach(obj => {
-    canvas.value?.remove(obj)
-  })
-  canvas.value.renderAll()
+  // 重新绘制背景图片
+  ctx.value.drawImage(
+    imageRef.value, 
+    0, 0, 
+    canvasSize.value.width, 
+    canvasSize.value.height
+  )
+  
   history.value = []
-}
-
-// 加载已有批注
-async function loadAnnotations() {
-  try {
-    const response = await getImageAnnotations(props.imageId)
-    annotations.value = response.annotations
-    
-    // 如果只有一个批注，加载到画布
-    if (response.annotations.length === 1) {
-      const annotationData = response.annotations[0].annotation_data
-      if (annotationData && annotationData.objects) {
-        canvas.value?.loadFromJSON(annotationData, () => {
-          canvas.value?.renderAll()
-        })
-      }
-    }
-  } catch (error) {
-    console.error('加载批注失败', error)
-  }
+  saveHistory()
 }
 
 // 保存批注
+const saving = ref(false)
+
 async function saveAnnotation() {
-  if (!canvas.value) return
+  if (!canvasRef.value || saving.value) return
   
-  const annotationData = canvas.value.toJSON() as AnnotationData
+  saving.value = true
   
   try {
+    const dataUrl = canvasRef.value.toDataURL('image/png')
+    
+    // 调用保存API
     const annotation = await createAnnotation({
       image_id: props.imageId,
-      annotation_data: annotationData
+      annotation_data: {
+        version: '1.0',
+        objects: [],
+        dataUrl: dataUrl
+      } as any
     })
     
-    ElMessage.success('批注保存成功')
-    emit('saved', annotation)
+    showSuccessToast('批注保存成功')
+    emit('save', annotation)
+    return annotation  // 返回保存的结果
   } catch (error) {
-    ElMessage.error('保存失败')
-    console.error(error)
+    showToast('保存失败')
+    console.error('批注保存失败:', error)
+    throw error  // 抛出错误让外部处理
+  } finally {
+    saving.value = false
   }
 }
 
-// 查看批注
-function viewAnnotation(annotation: Annotation) {
-  if (!canvas.value) return
-  
-  const data = annotation.annotation_data
-  if (data && data.objects) {
-    canvas.value.loadFromJSON(data, () => {
-      canvas.value?.renderAll()
-    })
-  }
-}
-
-// 切换典型例
-async function toggleExample(annotation: Annotation) {
-  try {
-    const result = await setAsExample(annotation.id)
-    annotation.is_example = result.is_example
-    ElMessage.success(result.message)
-  } catch (error) {
-    ElMessage.error('操作失败')
-  }
-}
-
-// 格式化时间
-function formatTime(time: string) {
-  return new Date(time).toLocaleString('zh-CN')
-}
-
-// 监听画笔颜色变化
-watch(brushColor, (color) => {
-  if (canvas.value?.freeDrawingBrush) {
-    canvas.value.freeDrawingBrush.color = color
-  }
-})
-
-// 监听画笔宽度变化
-watch(brushWidth, (width) => {
-  if (canvas.value?.freeDrawingBrush) {
-    canvas.value.freeDrawingBrush.width = width
-  }
+// 暴露方法给父组件调用
+defineExpose({
+  saveAnnotation
 })
 
 onMounted(() => {
@@ -421,6 +394,9 @@ onMounted(() => {
 
 <style scoped>
 .annotation-canvas {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   background: #f5f5f5;
   border-radius: 8px;
   overflow: hidden;
@@ -428,26 +404,54 @@ onMounted(() => {
 
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   padding: 12px;
   background: #fff;
   border-bottom: 1px solid #e0e0e0;
+}
+
+.tool-group {
+  display: flex;
+  gap: 8px;
 }
 
 .tool-options {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-size: 12px;
+}
+
+.tool-options input[type="color"] {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
 .canvas-container {
-  position: relative;
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: auto;
+  padding: 10px;
   min-height: 400px;
+  background: #e8e8e8;
 }
 
 .background-image {
   display: none;
+}
+
+.drawing-canvas {
+  border: 2px solid #ddd;
+  background: #fff;
+  cursor: crosshair;
+  touch-action: none;
 }
 
 .actions {
@@ -457,51 +461,5 @@ onMounted(() => {
   padding: 12px;
   background: #fff;
   border-top: 1px solid #e0e0e0;
-}
-
-.annotations-list {
-  padding: 12px;
-  background: #fff;
-  border-top: 1px solid #e0e0e0;
-}
-
-.annotations-list h4 {
-  margin: 0 0 12px 0;
-  font-size: 14px;
-  color: #333;
-}
-
-.annotation-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px;
-  border-radius: 4px;
-  margin-bottom: 8px;
-  background: #f9f9f9;
-}
-
-.annotation-item.is-example {
-  background: #f0f9eb;
-}
-
-.annotation-info {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.teacher {
-  font-weight: 500;
-}
-
-.time {
-  color: #999;
-  font-size: 12px;
-}
-
-.annotation-actions {
-  display: flex;
-  gap: 8px;
 }
 </style>
